@@ -1,0 +1,69 @@
+:root{
+  --bg:#0f1724;
+  --panel: rgba(255,255,255,0.06);
+  --accent: #7dd3fc;
+  --text: #e6eef8;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background: linear-gradient(180deg,#071029 0%, #0f1724 100%);
+  color:var(--text);
+  font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  padding:12px;
+}
+
+/* Canvas fills most of viewport but keeps margin */
+canvas#game{
+  display:block;
+  width:100%;
+  max-width:900px;
+  height:calc(100vh - 40px);
+  max-height:700px;
+  border-radius:10px;
+  box-shadow:0 8px 30px rgba(2,6,23,0.7), inset 0 1px 0 rgba(255,255,255,0.02);
+  background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00));
+}
+
+/* UI overlay */
+#ui{
+  position:absolute;
+  top:18px;
+  left:18px;
+  right:18px;
+  pointer-events:none;
+  width:calc(100% - 36px);
+  max-width:900px;
+  margin:0 auto;
+}
+
+#hud{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  background:var(--panel);
+  padding:8px 12px;
+  border-radius:8px;
+  pointer-events:auto;
+}
+
+#controls{
+  margin-top:8px;
+  background:rgba(255,255,255,0.03);
+  padding:8px 10px;
+  border-radius:8px;
+  pointer-events:auto;
+  width:fit-content;
+  font-size:13px;
+}
+
+/* Game over panel */
+#game-over{
+  position:absolute;
+  top:50%;
+}
