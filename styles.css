@@ -1,69 +1,116 @@
 :root{
-  --bg:#0f1724;
-  --panel: rgba(255,255,255,0.06);
-  --accent: #7dd3fc;
-  --text: #e6eef8;
+  --panel-bg: rgba(10,10,30,0.88);
+  --accent: #2c3ef0;
 }
 
+/* Reset & base */
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{
-  background: linear-gradient(180deg,#071029 0%, #0f1724 100%);
-  color:var(--text);
-  font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background: radial-gradient(circle at 30% 20%, #07102a 0%, #000 60%);
+  color:#e6eef8;
+  overflow:hidden;
+}
+
+/* Layout */
+#game-ui{
+  position:relative;
+  display:flex;
+  align-items:flex-start;
+  height:100vh;
+}
+
+/* Side panels */
+#side-panel,#right-panel{
+  width: 200px;
+  padding: 12px;
+  margin: 14px;
+  background: var(--panel-bg);
+  border-radius: 10px;
+  z-index: 3;
+}
+#side-panel h2{ text-align:center; margin-bottom:8px; }
+.panel-section{ margin-bottom:12px; font-size:14px; }
+.panel-actions{ display:flex; gap:8px; flex-direction:column; }
+.panel-actions button{ padding:8px; border-radius:6px; border:none; background:#1b2b6f; color:white; cursor:pointer; }
+
+/* Canvas center */
+#game{
+  flex:1;
+  display:block;
+  margin: 12px 6px;
+  border-radius: 10px;
+  box-shadow: 0 8px 40px rgba(2,6,23,0.6);
+  min-width: 640px;
+  min-height: 480px;
+  background: radial-gradient(circle, #061227 0%, #000 120%);
+  z-index:1;
+}
+
+/* Dialogue box */
+#dialogue-box{
+  position:fixed;
+  left:0;
+  right:0;
+  bottom:0;
+  padding:16px 24px;
+  background: rgba(5,8,20,0.94);
+  border-top:1px solid rgba(255,255,255,0.04);
+  z-index:4;
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+#dialogue-text{ flex:1; font-size:16px; }
+#next-dialogue{ background: var(--accent); color: #00121a; border:none; padding:8px 14px; border-radius:8px; cursor:pointer; }
+
+/* Overlay + menus */
+.overlay{
+  position: fixed;
+  inset: 0;
   display:flex;
   align-items:center;
   justify-content:center;
-  overflow:hidden;
-  padding:12px;
+  background: rgba(0,0,0,0.6);
+  z-index: 6;
+  transition: opacity .35s ease, transform .35s ease;
 }
-
-/* Canvas fills most of viewport but keeps margin */
-canvas#game{
-  display:block;
-  width:100%;
-  max-width:900px;
-  height:calc(100vh - 40px);
-  max-height:700px;
-  border-radius:10px;
-  box-shadow:0 8px 30px rgba(2,6,23,0.7), inset 0 1px 0 rgba(255,255,255,0.02);
-  background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00));
+.overlay.hidden{ opacity:0; pointer-events:none; transform: scale(.98); }
+.menu-panel, .start-panel, .overlay-panel {
+  background: rgba(6,8,20,0.96);
+  padding: 20px;
+  border-radius: 12px;
+  width: 420px;
+  color: #eaf1ff;
+  border:1px solid rgba(255,255,255,0.03);
 }
+.start-panel h1{ font-size:34px; margin-bottom:6px; text-align:center; }
+.subtitle{ color: #9fbff6; text-align:center; margin-bottom:8px; }
+.desc{ color:#bfcbe6; text-align:center; margin-bottom:16px; }
 
-/* UI overlay */
-#ui{
-  position:absolute;
-  top:18px;
-  left:18px;
-  right:18px;
-  pointer-events:none;
-  width:calc(100% - 36px);
-  max-width:900px;
-  margin:0 auto;
-}
-
-#hud{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  background:var(--panel);
-  padding:8px 12px;
+/* Card menu */
+.cards-grid{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+.card-btn{
+  padding:10px 12px;
+  background: rgba(255,255,255,0.03);
+  border:1px solid rgba(255,255,255,0.04);
   border-radius:8px;
-  pointer-events:auto;
+  color:white;
+  cursor:pointer;
 }
+.card-btn.selected{ background: linear-gradient(90deg,#3944ff 0%, #8bf0ff 100%); color:#00121a; }
 
-#controls{
-  margin-top:8px;
-  background:rgba(255,255,255,0.03);
-  padding:8px 10px;
-  border-radius:8px;
-  pointer-events:auto;
-  width:fit-content;
-  font-size:13px;
-}
+/* Shop rows */
+.shop-row{ display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.03); }
+.shop-row .buy{ padding:6px 10px; border:none; background:#2b7eff; color:#00111a; border-radius:6px; cursor:pointer; }
 
-/* Game over panel */
-#game-over{
-  position:absolute;
-  top:50%;
+/* Buttons */
+button{ font-family:inherit; }
+
+/* Small screen fallback */
+@media (max-width: 980px){
+  #side-panel,#right-panel{ display:none; }
+  #game{ min-width: 100%; }
+  #dialogue-box{ font-size:14px; padding:10px; }
 }
