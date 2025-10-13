@@ -10,6 +10,7 @@
   <div id="game-ui">
 
     <!-- Left Side Panel -->
+    <!-- Side HUD / Panels -->
     <div id="side-panel">
       <h2>Mind Orbit</h2>
       <div class="panel-section">
@@ -19,6 +20,8 @@
         <p>Meteorites: <strong id="meteorite-count">0</strong> ☄️</p>
       </div>
 
+        <p>Meteorites: <strong id="meteorite-count">0</strong> ☄️</p>
+      </div>
       <div class="panel-section">
         <p id="score">Score: 0</p>
         <p id="health">Health: 100</p>
@@ -40,6 +43,12 @@
     <canvas id="game"></canvas>
 
     <!-- Right panel placeholder -->
+    </div>
+
+    <!-- Game Canvas (center) -->
+    <canvas id="game"></canvas>
+
+    <!-- Right panel placeholder (optional) -->
     <div id="right-panel">
       <h3>Status</h3>
       <p>Power: <span id="power">1</span></p>
@@ -116,6 +125,37 @@
       <div style="margin-top:8px;">
         <button id="restart">Restart</button>
       </div>
+    </div>
+  </div>
+
+    </div>
+  </div>
+
+  <!-- Dialogue Box (visual-novel style) -->
+  <div id="dialogue-box" class="hidden">
+    <div id="dialogue-text">...</div>
+    <button id="next-dialogue">Next</button>
+  </div>
+
+  <!-- Start Screen (full overlay) -->
+  <div id="start-screen" class="overlay">
+    <div class="start-panel">
+      <h1>Mind Orbit</h1>
+      <p class="subtitle">To Infinity and Beyond — Mercury Mission</p>
+      <p class="desc">Learn planet facts, survive meteor storms, and defeat the boss.</p>
+      <div class="start-actions">
+        <button id="btn-start">Start Mission</button>
+        <button id="btn-help">How to Play</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Over Panel -->
+  <div id="game-over" class="hidden">
+    <div class="overlay-panel">
+      <h2>Mission Failed</h2>
+      <p id="final-score">Score: 0</p>
+      <button id="restart">Restart</button>
     </div>
   </div>
 

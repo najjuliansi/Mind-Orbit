@@ -15,6 +15,15 @@ const startScreen = document.getElementById('start-screen');
 const btnStart = document.getElementById('btn-start');
 const btnHelp = document.getElementById('btn-help');
 const btnShopSS = document.getElementById('btn-shop-ss');
+/* Combined shooter + start-screen + dialogue flow
+   - Start screen -> Dialogue -> Gameplay
+   - Uses your original shooter logic with minimal changes
+*/
+
+// ---------------------- Dialog / Start UI ----------------------
+const startScreen = document.getElementById('start-screen');
+const btnStart = document.getElementById('btn-start');
+const btnHelp = document.getElementById('btn-help');
 
 const dialogueBox = document.getElementById('dialogue-box');
 const dialogueText = document.getElementById('dialogue-text');
@@ -36,6 +45,59 @@ const meteoriteCountEl = document.getElementById('meteorite-count');
 const bossTimerEl = document.getElementById('boss-timer');
 
 const gameOverOverlay = document.getElementById('game-over');
+// Dialog lines (you can edit)
+const dialogues = [
+  "Mission control: Commander, you’re about to enter Mercury’s orbit.",
+  "Collect meteorite fragments to upgrade your ship between missions.",
+  "Survive the meteor showers and defeat the boss after 5 minutes.",
+  "Good luck, Commander!"
+];
+
+let dialogueIndex = 0;
+let inDialogue = true; // true while dialogue is active or before starting gameplay
+
+// Start button shows first dialogue (hides start screen)
+btnStart.addEventListener('click', () => {
+  startScreen.classList.add('hidden');
+  dialogueIndex = 0;
+  showDialogueLine(dialogues[dialogueIndex]);
+  dialogueBox.classList.remove('hidden');
+  inDialogue = true;
+});
+
+// Help button shows an alert (simple)
+btnHelp.addEventListener('click', () => {
+  alert('WASD to move, mouse to aim, click/hold to shoot. Collect meteorites and survive!');
+});
+
+// Next dialogue button
+nextDialogueBtn.addEventListener('click', () => {
+  dialogueIndex++;
+  if (dialogueIndex < dialogues.length) {
+    showDialogueLine(dialogues[dialogueIndex]);
+  } else {
+    // End dialogue and start the gameplay
+    dialogueBox.classList.add('hidden');
+    inDialogue = false;
+    // Reset timing so game starts cleanly
+    last = performance.now();
+  }
+});
+
+function showDialogueLine(text){
+  dialogueText.textContent = text;
+  dialogueBox.classList.remove('hidden');
+}
+
+// ---------------------- Canvas & HUD Elements ----------------------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const scoreEl = document.getElementById('score');           // side HUD
+const healthEl = document.getElementById('health');         // side HUD
+const meteoriteCountEl = document.getElementById('meteorite-count');
+
+const gameOverPanel = document.getElementById('game-over');
 const finalScoreEl = document.getElementById('final-score');
 const restartBtn = document.getElementById('restart');
 
@@ -67,6 +129,14 @@ function resizeCanvas(){
   const size = Math.max(480, Math.min(availableW, availableH));
   canvas.style.width = size + 'px';
   canvas.style.height = size + 'px';
+  // Fit canvas to available center area (make it fill available window while keeping aspect)
+  const padding = 32;
+  const availableW = window.innerWidth - 2 * 210; // reserve side panels width approx
+  const availableH = window.innerHeight - 40; // reserve small margins
+  const size = Math.max(480, Math.min(availableW, availableH));
+  canvas.style.width = size + 'px';
+  canvas.style.height = (size) + 'px';
+
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.floor(rect.width * dpr);
@@ -125,6 +195,20 @@ class Player {
       this.x += dx*this.speed*dt; this.y += dy*this.speed*dt;
       this.x = Math.max(this.radius, Math.min(W-this.radius, this.x));
       this.y = Math.max(this.radius, Math.min(H-this.radius, this.y));
+    if (inDialogue) return; // freeze player while in dialogue
+    let dx = 0, dy = 0;
+    if(input.up) dy -= 1;
+    if(input.down) dy += 1;
+    if(input.left) dx -= 1;
+    if(input.right) dx += 1;
+    if(dx!==0 || dy!==0){
+      const len = Math.hypot(dx,dy);
+      dx /= len; dy /= len;
+      this.x += dx * this.speed * dt;
+      this.y += dy * this.speed * dt;
+      // clamp to canvas
+      this.x = Math.max(this.radius, Math.min(W - this.radius, this.x));
+      this.y = Math.max(this.radius, Math.min(H - this.radius, this.y));
     }
   }
   draw(){
@@ -176,6 +260,7 @@ class Enemy {
     ctx.beginPath();
     ctx.fillStyle = this.color;
     ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
     ctx.fill();
   }
 }
@@ -197,6 +282,11 @@ const state = {
 
 // Utility
 function randRange(a,b){ return a + Math.random() * (b-a); }
+  meteorites: 0
+};
+
+/* ----- Utility ----- */
+function randRange(a,b){ return a + Math.random()*(b-a); }
 
 // ---------- Spawning ----------
 function spawnEnemy(){
@@ -242,6 +332,7 @@ function loop(now){
   last = now;
 
   // update only when not gameOver and not in dialogue
+  // update only when not in dialogue and not game over
   if(!state.gameOver && !inDialogue) update(dt);
   draw();
 
@@ -262,6 +353,7 @@ function update(dt){
   const baseFireRate = 1/6; // cooldown seconds
   const rapidMultiplier = cardSet.has('rapidFire') ? 0.6 : 1; // faster
   state.shootingCooldown -= dt;
+  const fireRate = 1/6; // 6 bullets per second
   if(input.mouseDown && state.shootingCooldown <= 0 && !inDialogue){
     shootTowards(input.mx, input.my);
     state.shootingCooldown = baseFireRate * rapidMultiplier;
@@ -326,6 +418,10 @@ function update(dt){
             state.score += (e.type === 'tank' ? 5 : 1);
             state.meteorites += (e.type === 'tank' ? 3 : 1);
           }
+          state.enemies.splice(j,1);
+          state.score += (e.type === 'tank' ? 5 : 1);
+          // collect meteorite pieces as reward
+          state.meteorites += (e.type === 'tank' ? 3 : 1);
         }
         // remove bullet
         state.bullets.splice(i,1);
@@ -363,6 +459,8 @@ function onBossDefeated(){
   state.score += 50;
   // allow restart -> start screen when player clicks Next
   dialogueIndex = dialogues.length; // treat as finished so Next will go to start-screen flow
+  healthEl.textContent = `Health: ${Math.max(0, Math.round(p.health))}`;
+  meteoriteCountEl.textContent = state.meteorites;
 }
 
 // ---------- Draw ----------
@@ -407,6 +505,7 @@ function endGame(){
 
 function resetGame(){
   // reset state
+  // Reset state and show start screen again
   state.player = new Player(W/2, H/2);
   state.bullets = [];
   state.enemies = [];
@@ -534,4 +633,19 @@ document.querySelectorAll('#shop-panel .buy').forEach(btn=>{
 
 // ---------- Initialize & Start Loop ----------
 resetGame(); // show start-screen etc.
+  scoreEl.textContent = `Score: ${state.score}`;
+  healthEl.textContent = `Health: ${Math.max(0, Math.round(state.player.health))}`;
+  meteoriteCountEl.textContent = state.meteorites;
+  gameOverPanel.classList.add('hidden');
+
+  // show start screen; user must press Start to begin dialogue -> game
+  startScreen.classList.remove('hidden');
+  inDialogue = true;
+  dialogueIndex = 0;
+}
+
+restartBtn.addEventListener('click', ()=> resetGame());
+
+/* Start the loop */
+resetGame();
 requestAnimationFrame(loop);
