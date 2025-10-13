@@ -28,19 +28,20 @@ canvas#game{
   border-radius:10px;
   box-shadow:0 8px 30px rgba(2,6,23,0.7), inset 0 1px 0 rgba(255,255,255,0.02);
   background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00));
+  position: relative;   /* add this */
+  z-index: 1;           /* make canvas below UI */
 }
 
 /* UI overlay */
-#ui{
-  position:absolute;
-  top:18px;
-  left:18px;
-  right:18px;
-  pointer-events:none;
-  width:calc(100% - 36px);
-  max-width:900px;
-  margin:0 auto;
+#ui {
+  position: absolute;
+  z-index: 2;           /* make sure UI sits above canvas */
+  top: 18px;
+  left: 18px;
+  right: 18px;
+  pointer-events: none; /* keeps text non-interactive by default */
 }
+
 
 #hud{
   display:flex;
@@ -63,7 +64,7 @@ canvas#game{
 }
 
 /* Game over panel */
-#game-over{
-  position:absolute;
-  top:50%;
+#game-over {
+  pointer-events: auto; /* allows the button to be clicked */
+  z-index: 3;           /* ensure above all */
 }
