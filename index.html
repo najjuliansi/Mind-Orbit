@@ -9,12 +9,17 @@
 <body>
   <div id="game-ui">
 
+    <!-- Left Side Panel -->
     <!-- Side HUD / Panels -->
     <div id="side-panel">
       <h2>Mind Orbit</h2>
       <div class="panel-section">
         <p>Planet: <strong id="planet-name">Mercury</strong></p>
         <p>Wave: <strong id="wave">1</strong></p>
+        <p>Boss in: <strong id="boss-timer">--</strong> s</p>
+        <p>Meteorites: <strong id="meteorite-count">0</strong> ☄️</p>
+      </div>
+
         <p>Meteorites: <strong id="meteorite-count">0</strong> ☄️</p>
       </div>
       <div class="panel-section">
@@ -27,6 +32,17 @@
         <div class="card-slot">Rapid Fire</div>
         <div class="card-slot">Auto Repair</div>
       </div>
+
+      <div class="panel-actions">
+        <button id="open-shop">Open Shop</button>
+        <button id="open-cards">Select Cards</button>
+      </div>
+    </div>
+
+    <!-- Canvas -->
+    <canvas id="game"></canvas>
+
+    <!-- Right panel placeholder -->
     </div>
 
     <!-- Game Canvas (center) -->
@@ -37,6 +53,81 @@
       <h3>Status</h3>
       <p>Power: <span id="power">1</span></p>
       <p>Speed: <span id="speed">100%</span></p>
+    </div>
+  </div>
+
+  <!-- Dialogue Box -->
+  <div id="dialogue-box" class="hidden">
+    <div id="dialogue-text">...</div>
+    <button id="next-dialogue">Next</button>
+  </div>
+
+  <!-- CARD Menu (choose ability cards before dialogue) -->
+  <div id="card-menu" class="overlay hidden">
+    <div class="menu-panel">
+      <h2>Choose Ability Cards (up to 3)</h2>
+      <div class="cards-grid">
+        <button class="card-btn" data-card="rapidFire">Rapid Fire</button>
+        <button class="card-btn" data-card="autoRepair">Auto Repair</button>
+        <button class="card-btn" data-card="overcharge">Overcharge</button>
+        <button class="card-btn" data-card="warpBoost">Warp Boost</button>
+        <button class="card-btn" data-card="solarShield">Solar Shield</button>
+      </div>
+      <div style="margin-top:12px;">
+        <button id="confirm-cards">Confirm Cards</button>
+        <button id="cancel-cards">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shop Panel -->
+  <div id="shop-panel" class="overlay hidden">
+    <div class="menu-panel">
+      <h2>Meteorite Shop</h2>
+      <p>Meteorite Pieces: <strong id="shop-meteorite-count">0</strong></p>
+      <div class="shop-row">
+        <div>Upgrade Damage (+1)</div>
+        <div><button class="buy" data-type="damage">Buy (10)</button></div>
+      </div>
+      <div class="shop-row">
+        <div>Upgrade Speed (+10%)</div>
+        <div><button class="buy" data-type="speed">Buy (10)</button></div>
+      </div>
+      <div class="shop-row">
+        <div>Upgrade Max Health (+15)</div>
+        <div><button class="buy" data-type="health">Buy (10)</button></div>
+      </div>
+      <div style="margin-top:12px;">
+        <button id="close-shop">Close Shop</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Start Screen Overlay -->
+  <div id="start-screen" class="overlay">
+    <div class="start-panel">
+      <h1>Mind Orbit</h1>
+      <p class="subtitle">To Infinity and Beyond — Mercury Mission</p>
+      <p class="desc">Learn planet facts, survive meteor storms, and defeat the boss.</p>
+      <div class="start-actions">
+        <button id="btn-start">Start Mission</button>
+        <button id="btn-help">How to Play</button>
+        <button id="btn-shop-ss">Shop</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Over Panel -->
+  <div id="game-over" class="overlay hidden">
+    <div class="overlay-panel">
+      <h2>Mission Failed</h2>
+      <p id="final-score">Score: 0</p>
+      <div style="margin-top:8px;">
+        <button id="restart">Restart</button>
+      </div>
+    </div>
+  </div>
+
     </div>
   </div>
 
