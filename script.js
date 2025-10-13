@@ -1,138 +1,412 @@
-:root{
-  --panel-bg: rgba(10,10,30,0.85);
-  --accent: #2c3ef0;
-  --muted: rgba(255,255,255,0.08);
-  --glass: rgba(255,255,255,0.04);
+/* Combined shooter + start-screen + dialogue flow
+   - Start screen -> Dialogue -> Gameplay
+   - Uses your original shooter logic with minimal changes
+*/
+
+// ---------------------- Dialog / Start UI ----------------------
+const startScreen = document.getElementById('start-screen');
+const btnStart = document.getElementById('btn-start');
+const btnHelp = document.getElementById('btn-help');
+
+const dialogueBox = document.getElementById('dialogue-box');
+const dialogueText = document.getElementById('dialogue-text');
+const nextDialogueBtn = document.getElementById('next-dialogue');
+
+// Dialog lines (you can edit)
+const dialogues = [
+  "Mission control: Commander, you’re about to enter Mercury’s orbit.",
+  "Collect meteorite fragments to upgrade your ship between missions.",
+  "Survive the meteor showers and defeat the boss after 5 minutes.",
+  "Good luck, Commander!"
+];
+
+let dialogueIndex = 0;
+let inDialogue = true; // true while dialogue is active or before starting gameplay
+
+// Start button shows first dialogue (hides start screen)
+btnStart.addEventListener('click', () => {
+  startScreen.classList.add('hidden');
+  dialogueIndex = 0;
+  showDialogueLine(dialogues[dialogueIndex]);
+  dialogueBox.classList.remove('hidden');
+  inDialogue = true;
+});
+
+// Help button shows an alert (simple)
+btnHelp.addEventListener('click', () => {
+  alert('WASD to move, mouse to aim, click/hold to shoot. Collect meteorites and survive!');
+});
+
+// Next dialogue button
+nextDialogueBtn.addEventListener('click', () => {
+  dialogueIndex++;
+  if (dialogueIndex < dialogues.length) {
+    showDialogueLine(dialogues[dialogueIndex]);
+  } else {
+    // End dialogue and start the gameplay
+    dialogueBox.classList.add('hidden');
+    inDialogue = false;
+    // Reset timing so game starts cleanly
+    last = performance.now();
+  }
+});
+
+function showDialogueLine(text){
+  dialogueText.textContent = text;
+  dialogueBox.classList.remove('hidden');
 }
 
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
-body{
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-  background: radial-gradient(circle at 30% 20%, #07102a 0%, #000 60%);
-  color:#e6eef8;
-  overflow:hidden;
+// ---------------------- Canvas & HUD Elements ----------------------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const scoreEl = document.getElementById('score');           // side HUD
+const healthEl = document.getElementById('health');         // side HUD
+const meteoriteCountEl = document.getElementById('meteorite-count');
+
+const gameOverPanel = document.getElementById('game-over');
+const finalScoreEl = document.getElementById('final-score');
+const restartBtn = document.getElementById('restart');
+
+let W = 800, H = 600;
+function resizeCanvas(){
+  // Fit canvas to available center area (make it fill available window while keeping aspect)
+  const padding = 32;
+  const availableW = window.innerWidth - 2 * 210; // reserve side panels width approx
+  const availableH = window.innerHeight - 40; // reserve small margins
+  const size = Math.max(480, Math.min(availableW, availableH));
+  canvas.style.width = size + 'px';
+  canvas.style.height = (size) + 'px';
+
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(rect.width * dpr);
+  canvas.height = Math.floor(rect.height * dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  W = rect.width;
+  H = rect.height;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+/* ----- Input ----- */
+const input = {
+  up:false, down:false, left:false, right:false,
+  mx: W/2, my: H/2, mouseDown:false
+};
+
+window.addEventListener('keydown', e=>{
+  if(e.key==='w' || e.key==='W' || e.key==='ArrowUp') input.up = true;
+  if(e.key==='s' || e.key==='S' || e.key==='ArrowDown') input.down = true;
+  if(e.key==='a' || e.key==='A' || e.key==='ArrowLeft') input.left = true;
+  if(e.key==='d' || e.key==='D' || e.key==='ArrowRight') input.right = true;
+});
+window.addEventListener('keyup', e=>{
+  if(e.key==='w' || e.key==='W' || e.key==='ArrowUp') input.up = false;
+  if(e.key==='s' || e.key==='S' || e.key==='ArrowDown') input.down = false;
+  if(e.key==='a' || e.key==='A' || e.key==='ArrowLeft') input.left = false;
+  if(e.key==='d' || e.key==='D' || e.key==='ArrowRight') input.right = false;
+});
+canvas.addEventListener('mousemove', e=>{
+  const rect = canvas.getBoundingClientRect();
+  input.mx = e.clientX - rect.left;
+  input.my = e.clientY - rect.top;
+});
+canvas.addEventListener('mousedown', e=>{ input.mouseDown=true; });
+window.addEventListener('mouseup', e=>{ input.mouseDown=false; });
+
+/* ----- Game Objects ----- */
+class Player {
+  constructor(x,y){
+    this.x = x; this.y = y;
+    this.radius = 14;
+    this.speed = 180; // px/sec
+    this.health = 100;
+  }
+  update(dt){
+    if (inDialogue) return; // freeze player while in dialogue
+    let dx = 0, dy = 0;
+    if(input.up) dy -= 1;
+    if(input.down) dy += 1;
+    if(input.left) dx -= 1;
+    if(input.right) dx += 1;
+    if(dx!==0 || dy!==0){
+      const len = Math.hypot(dx,dy);
+      dx /= len; dy /= len;
+      this.x += dx * this.speed * dt;
+      this.y += dy * this.speed * dt;
+      // clamp to canvas
+      this.x = Math.max(this.radius, Math.min(W - this.radius, this.x));
+      this.y = Math.max(this.radius, Math.min(H - this.radius, this.y));
+    }
+  }
+  draw(){
+    // body
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.beginPath();
+    ctx.fillStyle = '#8be8ff';
+    ctx.arc(0,0,this.radius,0,Math.PI*2);
+    ctx.fill();
+    // aim direction indicator (nose)
+    const angle = Math.atan2(input.my - this.y, input.mx - this.x);
+    ctx.rotate(angle);
+    ctx.fillStyle = '#04202b';
+    ctx.fillRect(this.radius - 2, -4, 12, 8);
+    ctx.restore();
+  }
 }
 
-/* Layout */
-#game-ui{
-  position:relative;
-  display:flex;
-  align-items:flex-start;
-  height:100vh;
-  width:100%;
+class Bullet {
+  constructor(x,y,vx,vy){
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.radius = 4;
+    this.life = 2.0; // seconds
+  }
+  update(dt){
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.life -= dt;
+  }
+  draw(){
+    ctx.beginPath();
+    ctx.fillStyle = '#fff9c4';
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+    ctx.fill();
+  }
 }
 
-/* Side panels */
-#side-panel, #right-panel{
-  width: 190px;
-  padding: 12px;
-  margin: 14px;
-  background: var(--panel-bg);
-  border-radius: 10px;
-  border:1px solid rgba(255,255,255,0.04);
-  box-shadow: 0 8px 30px rgba(2,6,23,0.6);
-  z-index: 3;
-}
-#side-panel h2{ text-align:center; margin-bottom:8px; }
-.panel-section{ margin-bottom:12px; }
-.card-slot{
-  background: rgba(255,255,255,0.03);
-  padding:6px;
-  margin-top:6px;
-  border-radius:6px;
-  text-align:center;
-  font-size:13px;
-}
-
-/* Canvas centered and responsive */
-#game{
-  flex:1;
-  display:block;
-  margin: 12px 6px;
-  border-radius: 10px;
-  box-shadow: 0 8px 40px rgba(2,6,23,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
-  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
-  /* We'll size the canvas in JS to fit area; set min size to keep aspect */
-  min-width: 640px;
-  min-height: 480px;
-  z-index:1;
+class Enemy {
+  constructor(x,y,type='basic'){
+    this.x = x; this.y = y;
+    this.radius = 12;
+    this.speed = 60 + Math.random()*40;
+    this.type = type;
+    this.hp = 1 + (type==='tank'?2:0);
+    this.color = type==='tank' ? '#ff8a80' : '#ffb267';
+  }
+  update(dt, player){
+    const angle = Math.atan2(player.y - this.y, player.x - this.x);
+    this.x += Math.cos(angle) * this.speed * dt;
+    this.y += Math.sin(angle) * this.speed * dt;
+  }
+  draw(){
+    ctx.beginPath();
+    ctx.fillStyle = this.color;
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+    ctx.fill();
+  }
 }
 
-/* Dialogue box */
-#dialogue-box{
-  position:fixed;
-  left:0;
-  right:0;
-  bottom:0;
-  padding:16px 24px;
-  background: rgba(5,8,20,0.92);
-  border-top:1px solid rgba(255,255,255,0.04);
-  z-index:4;
-  display:flex;
-  align-items:center;
-  gap:12px;
-}
-#dialogue-text{
-  flex:1;
-  font-size:16px;
-}
-#next-dialogue{
-  background: var(--accent);
-  color: #00121a;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 8px;
-  cursor: pointer;
+/* ----- Game State ----- */
+const state = {
+  player: new Player(W/2,H/2),
+  bullets: [],
+  enemies: [],
+  score: 0,
+  spawnTimer: 0,
+  spawnInterval: 1.1, // seconds
+  shootingCooldown: 0,
+  gameOver: false,
+  meteorites: 0
+};
+
+/* ----- Utility ----- */
+function randRange(a,b){ return a + Math.random()*(b-a); }
+
+/* ----- Spawn enemies at edges ----- */
+function spawnEnemy(){
+  // choose random edge
+  const edge = Math.floor(Math.random()*4);
+  let x,y;
+  if(edge===0){ x = randRange(0,W); y = -20; } // top
+  if(edge===1){ x = randRange(0,W); y = H+20; } // bottom
+  if(edge===2){ x = -20; y = randRange(0,H);}   // left
+  if(edge===3){ x = W+20; y = randRange(0,H);}  // right
+
+  // 10% chance of tank enemy
+  const type = Math.random() < 0.10 ? 'tank' : 'basic';
+  const e = new Enemy(x,y,type);
+  if(type === 'tank'){ e.radius = 18; e.speed *= 0.7; e.hp = 3; }
+  state.enemies.push(e);
 }
 
-/* Overlays (start-screen and game-over) */
-.overlay{
-  position: fixed;
-  inset: 0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background: linear-gradient(180deg, rgba(0,0,0,0.6), rgba(0,0,0,0.75));
-  z-index: 6;
-}
-.start-panel{
-  background: rgba(6,8,20,0.95);
-  padding: 28px 30px;
-  border-radius: 12px;
-  text-align:center;
-  width: 420px;
-  border:1px solid rgba(255,255,255,0.03);
-}
-.start-panel h1{ margin-bottom:6px; font-size:36px; }
-.subtitle{ color: #9fbff6; margin-bottom:12px; }
-.desc{ color: #bfcbe6; margin-bottom:18px; }
-.start-actions { display:flex; gap:10px; justify-content:center; }
-.start-actions button{
-  background: var(--accent);
-  color: #00121a;
-  border:none;
-  padding:10px 18px;
-  border-radius:8px;
-  cursor:pointer;
-}
-.start-actions button:nth-child(2){ background: transparent; border:1px solid rgba(255,255,255,0.06); color:#dfe9ff; }
-
-/* Game Over panel */
-#game-over .overlay-panel{
-  background: rgba(6,8,20,0.95);
-  padding: 22px;
-  border-radius:10px;
-  text-align:center;
-  border:1px solid rgba(255,255,255,0.03);
+/* ----- Shooting ----- */
+function shootTowards(mx,my){
+  const p = state.player;
+  const angle = Math.atan2(my - p.y, mx - p.x);
+  const speed = 420;
+  const vx = Math.cos(angle) * speed;
+  const vy = Math.sin(angle) * speed;
+  // start bullet just in front of player
+  const bx = p.x + Math.cos(angle) * (p.radius + 6);
+  const by = p.y + Math.sin(angle) * (p.radius + 6);
+  state.bullets.push(new Bullet(bx,by,vx,vy));
 }
 
-/* Hidden helper */
-.hidden{ display:none; }
+/* ----- Game Loop ----- */
+let last = performance.now();
+function loop(now){
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
 
-/* Small screen fallback */
-@media (max-width: 980px){
-  #side-panel, #right-panel { display:none; }
-  #game { min-width: 100%; }
-  #dialogue-box { font-size:14px; padding:10px; }
+  // update only when not in dialogue and not game over
+  if(!state.gameOver && !inDialogue) update(dt);
+  draw();
+
+  requestAnimationFrame(loop);
 }
+
+function update(dt){
+  const p = state.player;
+  p.update(dt);
+
+  // Shooting control: allow holding mouse to fire with a cooldown
+  state.shootingCooldown -= dt;
+  const fireRate = 1/6; // 6 bullets per second
+  if(input.mouseDown && state.shootingCooldown <= 0 && !inDialogue){
+    shootTowards(input.mx, input.my);
+    state.shootingCooldown = fireRate;
+  }
+
+  // bullets update and cull
+  for(let i = state.bullets.length - 1; i >= 0; i--){
+    const b = state.bullets[i];
+    b.update(dt);
+    if(b.life <= 0 || b.x < -50 || b.y < -50 || b.x > W+50 || b.y > H+50){
+      state.bullets.splice(i,1);
+    }
+  }
+
+  // spawn enemies gradually faster as score increases
+  state.spawnTimer -= dt;
+  if(state.spawnTimer <= 0){
+    spawnEnemy();
+    state.spawnTimer = Math.max(0.28, state.spawnInterval - Math.min(0.8, state.score*0.02));
+  }
+
+  // update enemies
+  for(let i = state.enemies.length - 1; i >= 0; i--){
+    const e = state.enemies[i];
+    e.update(dt, p);
+
+    // enemy hits player?
+    const dx = e.x - p.x, dy = e.y - p.y;
+    if(Math.hypot(dx,dy) < e.radius + p.radius - 2){
+      // damage player and remove enemy
+      p.health -= 12 + (e.type === 'tank' ? 10 : 0);
+      state.enemies.splice(i,1);
+      if(p.health <= 0){
+        endGame();
+        return;
+      }
+    }
+  }
+
+  // bullets hit enemies
+  for(let i = state.bullets.length - 1; i >= 0; i--){
+    const b = state.bullets[i];
+    for(let j = state.enemies.length - 1; j >= 0; j--){
+      const e = state.enemies[j];
+      const d = Math.hypot(b.x - e.x, b.y - e.y);
+      if(d < b.radius + e.radius){
+        // hit
+        e.hp -= 1;
+        if(e.hp <= 0){
+          state.enemies.splice(j,1);
+          state.score += (e.type === 'tank' ? 5 : 1);
+          // collect meteorite pieces as reward
+          state.meteorites += (e.type === 'tank' ? 3 : 1);
+        }
+        state.bullets.splice(i,1);
+        break;
+      }
+    }
+  }
+
+  // update HUD
+  scoreEl.textContent = `Score: ${state.score}`;
+  healthEl.textContent = `Health: ${Math.max(0, Math.round(p.health))}`;
+  meteoriteCountEl.textContent = state.meteorites;
+}
+
+function draw(){
+  // clear
+  ctx.clearRect(0,0,W,H);
+
+  // background grid / subtle
+  const grid = 40;
+  ctx.save();
+  ctx.globalAlpha = 0.06;
+  ctx.strokeStyle = '#ffffff';
+  for(let x = 0; x < W; x += grid){
+    ctx.beginPath();
+    ctx.moveTo(x + 0.5, 0);
+    ctx.lineTo(x + 0.5, H);
+    ctx.stroke();
+  }
+  for(let y = 0; y < H; y += grid){
+    ctx.beginPath();
+    ctx.moveTo(0, y + 0.5);
+    ctx.lineTo(W, y + 0.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // draw bullets
+  for(const b of state.bullets) b.draw();
+
+  // draw enemies
+  for(const e of state.enemies) e.draw();
+
+  // draw player
+  state.player.draw();
+
+  // optionally draw crosshair
+  ctx.beginPath();
+  ctx.arc(input.mx, input.my, 6, 0, Math.PI*2);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.stroke();
+
+  // game over overlay
+  if(state.gameOver){
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(0,0,W,H);
+  }
+}
+
+/* ----- Game Over and Restart ----- */
+function endGame(){
+  state.gameOver = true;
+  gameOverPanel.classList.remove('hidden');
+  finalScoreEl.textContent = `Score: ${state.score}`;
+}
+
+function resetGame(){
+  // Reset state and show start screen again
+  state.player = new Player(W/2, H/2);
+  state.bullets = [];
+  state.enemies = [];
+  state.score = 0;
+  state.spawnTimer = 0.6;
+  state.shootingCooldown = 0;
+  state.gameOver = false;
+  state.meteorites = 0;
+  scoreEl.textContent = `Score: ${state.score}`;
+  healthEl.textContent = `Health: ${Math.max(0, Math.round(state.player.health))}`;
+  meteoriteCountEl.textContent = state.meteorites;
+  gameOverPanel.classList.add('hidden');
+
+  // show start screen; user must press Start to begin dialogue -> game
+  startScreen.classList.remove('hidden');
+  inDialogue = true;
+  dialogueIndex = 0;
+}
+
+restartBtn.addEventListener('click', ()=> resetGame());
+
+/* Start the loop */
+resetGame();
+requestAnimationFrame(loop);
