@@ -1,124 +1,191 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Mind Orbit: Mercury Mission</title>
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mind Orbit - Educational Space Shooter</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="game-ui">
-
-    <!-- Left Side Panel -->
-    <div id="side-panel">
-      <h2>Mind Orbit</h2>
-      <div class="panel-section">
-        <p>Planet: <strong id="planet-name">Mercury</strong></p>
-        <p>Wave: <strong id="wave">1</strong></p>
-        <p>Boss in: <strong id="boss-timer">--</strong> s</p>
-        <p>Meteorites: <strong id="meteorite-count">0</strong> ☄️</p>
-      </div>
-
-      <div class="panel-section">
-        <p id="score">Score: 0</p>
-        <p id="health">Health: 100</p>
-      </div>
-
-      <div class="panel-section small">
-        <p>Cards</p>
-        <div class="card-slot">Rapid Fire</div>
-        <div class="card-slot">Auto Repair</div>
-      </div>
-
-      <div class="panel-actions">
-        <button id="open-shop">Open Shop</button>
-        <button id="open-cards">Select Cards</button>
-      </div>
+    <!-- Main Menu / Starting Screen -->
+    <div id="mainMenu" class="screen active">
+        <div class="starting-screen">
+            <img src="Assets/Background.png" alt="Background" class="start-background">
+            <img src="Assets/LogoMindOrbit.png" alt="Mind Orbit Logo" class="start-logo">
+            <img src="Assets/Start.png" alt="Start" id="startButton">
+        </div>
+        
+        <!-- Menu Options (hidden initially) -->
+        <div class="menu-options hidden" id="menuOptions">
+            <div class="menu-options-content">
+                <button class="menu-option-btn" onclick="showScreen('planetSelect')">Start Mission</button>
+                <button class="menu-option-btn" onclick="showScreen('upgradeShop')">Upgrade Shop</button>
+                <button class="menu-option-btn" onclick="showScreen('factCollection')">Space Facts</button>
+                <button class="menu-option-btn" onclick="showScreen('achievements')">Achievements</button>
+                <button class="menu-option-btn" onclick="hideMenuOptions()">Back</button>
+            </div>
+        </div>
     </div>
 
-    <!-- Canvas -->
-    <canvas id="game"></canvas>
-
-    <!-- Right panel placeholder -->
-    <div id="right-panel">
-      <h3>Status</h3>
-      <p>Power: <span id="power">1</span></p>
-      <p>Speed: <span id="speed">100%</span></p>
+    <!-- Planet Selection -->
+    <div id="planetSelect" class="screen">
+        <div class="menu-container">
+            <h2>Select Planet</h2>
+            <div class="currency-display">
+                <span>Meteorite Pieces: <span id="planetSelectPieces">0</span></span>
+            </div>
+            <div class="planet-grid">
+                <div class="planet-card" data-planet="mercury" onclick="selectPlanet('mercury')">
+                    <div class="planet-icon">☿</div>
+                    <h3>Mercury</h3>
+                    <p class="planet-status locked">Locked</p>
+                </div>
+                <div class="planet-card" data-planet="venus" onclick="selectPlanet('venus')">
+                    <div class="planet-icon">♀</div>
+                    <h3>Venus</h3>
+                    <p class="planet-status locked">Locked</p>
+                </div>
+                <div class="planet-card" data-planet="earth" onclick="selectPlanet('earth')">
+                    <div class="planet-icon">♁</div>
+                    <h3>Earth</h3>
+                    <p class="planet-status locked">Locked</p>
+                </div>
+                <div class="planet-card" data-planet="mars" onclick="selectPlanet('mars')">
+                    <div class="planet-icon">♂</div>
+                    <h3>Mars</h3>
+                    <p class="planet-status locked">Locked</p>
+                </div>
+                <div class="planet-card" data-planet="jupiter" onclick="selectPlanet('jupiter')">
+                    <div class="planet-icon">♃</div>
+                    <h3>Jupiter</h3>
+                    <p class="planet-status locked">Locked</p>
+                </div>
+                <div class="planet-card" data-planet="saturn" onclick="selectPlanet('saturn')">
+                    <div class="planet-icon">♄</div>
+                    <h3>Saturn</h3>
+                    <p class="planet-status locked">Locked</p>
+                </div>
+                <div class="planet-card" data-planet="uranus" onclick="selectPlanet('uranus')">
+                    <div class="planet-icon">♅</div>
+                    <h3>Uranus</h3>
+                    <p class="planet-status locked">Locked</p>
+                </div>
+                <div class="planet-card" data-planet="neptune" onclick="selectPlanet('neptune')">
+                    <div class="planet-icon">♆</div>
+                    <h3>Neptune</h3>
+                    <p class="planet-status locked">Locked</p>
+                </div>
+                <div class="planet-card" data-planet="sun" onclick="selectPlanet('sun')">
+                    <div class="planet-icon">☉</div>
+                    <h3>Sun (Bonus)</h3>
+                    <p class="planet-status locked">Locked</p>
+                </div>
+            </div>
+            <button class="menu-btn" onclick="showScreen('mainMenu')">Back</button>
+        </div>
     </div>
-  </div>
 
-  <!-- Dialogue Box -->
-  <div id="dialogue-box" class="hidden">
-    <div id="dialogue-text">...</div>
-    <button id="next-dialogue">Next</button>
-  </div>
-
-  <!-- CARD Menu (choose ability cards before dialogue) -->
-  <div id="card-menu" class="overlay hidden">
-    <div class="menu-panel">
-      <h2>Choose Ability Cards (up to 3)</h2>
-      <div class="cards-grid">
-        <button class="card-btn" data-card="rapidFire">Rapid Fire</button>
-        <button class="card-btn" data-card="autoRepair">Auto Repair</button>
-        <button class="card-btn" data-card="overcharge">Overcharge</button>
-        <button class="card-btn" data-card="warpBoost">Warp Boost</button>
-        <button class="card-btn" data-card="solarShield">Solar Shield</button>
-      </div>
-      <div style="margin-top:12px;">
-        <button id="confirm-cards">Confirm Cards</button>
-        <button id="cancel-cards">Cancel</button>
-      </div>
+    <!-- Upgrade Shop -->
+    <div id="upgradeShop" class="screen">
+        <div class="menu-container">
+            <h2>Upgrade Shop</h2>
+            <div class="currency-display">
+                <span>Meteorite Pieces: <span id="meteoritePieces">0</span></span>
+            </div>
+            <div class="upgrade-list">
+                <div class="upgrade-item">
+                    <h3>Attack Damage</h3>
+                    <p>Level: <span id="damageLevel">1</span></p>
+                    <p>Cost: <span id="damageCost">10</span> pieces</p>
+                    <button onclick="buyUpgrade('damage')">Upgrade</button>
+                </div>
+                <div class="upgrade-item">
+                    <h3>Attack Speed</h3>
+                    <p>Level: <span id="speedLevel">1</span></p>
+                    <p>Cost: <span id="speedCost">10</span> pieces</p>
+                    <button onclick="buyUpgrade('speed')">Upgrade</button>
+                </div>
+                <div class="upgrade-item">
+                    <h3>Rocket Speed</h3>
+                    <p>Level: <span id="rocketSpeedLevel">1</span></p>
+                    <p>Cost: <span id="rocketSpeedCost">10</span> pieces</p>
+                    <button onclick="buyUpgrade('rocketSpeed')">Upgrade</button>
+                </div>
+                <div class="upgrade-item">
+                    <h3>Health / Shield</h3>
+                    <p>Level: <span id="healthLevel">1</span></p>
+                    <p>Cost: <span id="healthCost">10</span> pieces</p>
+                    <button onclick="buyUpgrade('health')">Upgrade</button>
+                </div>
+            </div>
+            <button class="menu-btn" onclick="showScreen('mainMenu')">Back</button>
+        </div>
     </div>
-  </div>
 
-  <!-- Shop Panel -->
-  <div id="shop-panel" class="overlay hidden">
-    <div class="menu-panel">
-      <h2>Meteorite Shop</h2>
-      <p>Meteorite Pieces: <strong id="shop-meteorite-count">0</strong></p>
-      <div class="shop-row">
-        <div>Upgrade Damage (+1)</div>
-        <div><button class="buy" data-type="damage">Buy (10)</button></div>
-      </div>
-      <div class="shop-row">
-        <div>Upgrade Speed (+10%)</div>
-        <div><button class="buy" data-type="speed">Buy (10)</button></div>
-      </div>
-      <div class="shop-row">
-        <div>Upgrade Max Health (+15)</div>
-        <div><button class="buy" data-type="health">Buy (10)</button></div>
-      </div>
-      <div style="margin-top:12px;">
-        <button id="close-shop">Close Shop</button>
-      </div>
+    <!-- Fact Collection -->
+    <div id="factCollection" class="screen">
+        <div class="menu-container">
+            <h2>Space Facts Collection</h2>
+            <div id="factList" class="fact-list"></div>
+            <button class="menu-btn" onclick="showScreen('mainMenu')">Back</button>
+        </div>
     </div>
-  </div>
 
-  <!-- Start Screen Overlay -->
-  <div id="start-screen" class="overlay">
-    <div class="start-panel">
-      <h1>Mind Orbit</h1>
-      <p class="subtitle">To Infinity and Beyond — Mercury Mission</p>
-      <p class="desc">Learn planet facts, survive meteor storms, and defeat the boss.</p>
-      <div class="start-actions">
-        <button id="btn-start">Start Mission</button>
-        <button id="btn-help">How to Play</button>
-        <button id="btn-shop-ss">Shop</button>
-      </div>
+    <!-- Achievements -->
+    <div id="achievements" class="screen">
+        <div class="menu-container">
+            <h2>Achievements</h2>
+            <div id="achievementList" class="achievement-list"></div>
+            <button class="menu-btn" onclick="showScreen('mainMenu')">Back</button>
+        </div>
     </div>
-  </div>
 
-  <!-- Game Over Panel -->
-  <div id="game-over" class="overlay hidden">
-    <div class="overlay-panel">
-      <h2>Mission Failed</h2>
-      <p id="final-score">Score: 0</p>
-      <div style="margin-top:8px;">
-        <button id="restart">Restart</button>
-      </div>
+    <!-- Game Screen -->
+    <div id="gameScreen" class="screen">
+        <canvas id="gameCanvas"></canvas>
+        <div class="game-ui">
+            <div class="hud">
+                <div class="hud-item">
+                    <span>Health: <span id="healthDisplay">100</span></span>
+                </div>
+                <div class="hud-item">
+                    <span>Time: <span id="timeDisplay">0:00</span></span>
+                </div>
+                <div class="hud-item">
+                    <span>Pieces: <span id="piecesDisplay">0</span></span>
+                </div>
+                <div class="hud-item">
+                    <span>Planet: <span id="planetDisplay">Mercury</span></span>
+                </div>
+            </div>
+            <div id="buffDisplay" class="buff-display"></div>
+        </div>
+        <div id="dialogueBox" class="dialogue-box hidden">
+            <h3 id="dialogueTitle"></h3>
+            <p id="dialogueText"></p>
+            <button onclick="closeDialogue()">Continue</button>
+        </div>
+        <div id="bossHealthBar" class="boss-health hidden">
+            <div class="boss-name"></div>
+            <div class="health-bar-container">
+                <div class="health-bar-fill"></div>
+            </div>
+        </div>
+        <button id="pauseBtn" class="pause-btn" onclick="togglePause()">Pause</button>
     </div>
-  </div>
 
-  <script src="script.js"></script>
+    <!-- Game Over / Victory Screen -->
+    <div id="gameOverScreen" class="screen">
+        <div class="menu-container">
+            <h2 id="gameOverTitle">Mission Complete!</h2>
+            <p id="gameOverText"></p>
+            <div id="gameOverStats"></div>
+            <button class="menu-btn" onclick="showScreen('planetSelect')">Select Planet</button>
+            <button class="menu-btn" onclick="showScreen('mainMenu')">Main Menu</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
 </body>
 </html>
+
