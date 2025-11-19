@@ -1,537 +1,1516 @@
-/* Full combined script:
-   - Start screen -> Card selection -> Dialogue -> Gameplay
-   - Boss timer + spawn
-   - Shop with permanent upgrades
-   - Card effects applied for the run
-*/
-
-// ---------- Config ----------
-const BOSS_TIME = 60; // seconds until boss (set to 300 for 5 minutes)
-const MAX_CARD_SELECTION = 3;
-const SHOP_COST_BASE = 10;
-
-// ---------- UI Elements ----------
-const startScreen = document.getElementById('start-screen');
-const btnStart = document.getElementById('btn-start');
-const btnHelp = document.getElementById('btn-help');
-const btnShopSS = document.getElementById('btn-shop-ss');
-
-const dialogueBox = document.getElementById('dialogue-box');
-const dialogueText = document.getElementById('dialogue-text');
-const nextDialogueBtn = document.getElementById('next-dialogue');
-
-const cardMenu = document.getElementById('card-menu');
-const cardButtons = Array.from(document.querySelectorAll('.card-btn'));
-const confirmCardsBtn = document.getElementById('confirm-cards');
-const cancelCardsBtn = document.getElementById('cancel-cards');
-
-const shopPanel = document.getElementById('shop-panel');
-const openShopBtn = document.getElementById('open-shop');
-const closeShopBtn = document.getElementById('close-shop');
-const shopMeteoriteCount = document.getElementById('shop-meteorite-count');
-
-const scoreEl = document.getElementById('score');
-const healthEl = document.getElementById('health');
-const meteoriteCountEl = document.getElementById('meteorite-count');
-const bossTimerEl = document.getElementById('boss-timer');
-
-const gameOverOverlay = document.getElementById('game-over');
-const finalScoreEl = document.getElementById('final-score');
-const restartBtn = document.getElementById('restart');
-
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-
-// ---------- Dialogue content ----------
-const dialogues = [
-  "Mission control: Commander, you’re about to enter Mercury’s orbit.",
-  "Collect meteorite fragments to upgrade your ship between missions.",
-  "Survive the meteor showers and defeat the boss after the timer.",
-  "Good luck, Commander!"
-];
-
-// ---------- State ----------
-let dialogueIndex = 0;
-let inDialogue = true;
-let selectedCards = []; // strings of card ids
-let cardSet = new Set();
-
-let gameStartTime = 0;
-let bossSpawned = false;
-
-let W = 800, H = 600;
-function resizeCanvas(){
-  const padding = 32;
-  const availableW = window.innerWidth - 2 * 220;
-  const availableH = window.innerHeight - 40;
-  const size = Math.max(480, Math.min(availableW, availableH));
-  canvas.style.width = size + 'px';
-  canvas.style.height = size + 'px';
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.floor(rect.width * dpr);
-  canvas.height = Math.floor(rect.height * dpr);
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  W = rect.width;
-  H = rect.height;
-}
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
-
-// Input
-const input = { up:false, down:false, left:false, right:false, mx:W/2, my:H/2, mouseDown:false };
-window.addEventListener('keydown', e=>{
-  if(e.key==='w'||e.key==='ArrowUp') input.up=true;
-  if(e.key==='s'||e.key==='ArrowDown') input.down=true;
-  if(e.key==='a'||e.key==='ArrowLeft') input.left=true;
-  if(e.key==='d'||e.key==='ArrowRight') input.right=true;
-});
-window.addEventListener('keyup', e=>{
-  if(e.key==='w'||e.key==='ArrowUp') input.up=false;
-  if(e.key==='s'||e.key==='ArrowDown') input.down=false;
-  if(e.key==='a'||e.key==='ArrowLeft') input.left=false;
-  if(e.key==='d'||e.key==='ArrowRight') input.right=false;
-});
-canvas.addEventListener('mousemove', e=>{
-  const rect = canvas.getBoundingClientRect();
-  input.mx = e.clientX - rect.left;
-  input.my = e.clientY - rect.top;
-});
-canvas.addEventListener('mousedown', ()=> input.mouseDown=true);
-window.addEventListener('mouseup', ()=> input.mouseDown=false);
-
-// Basic objects (Player, Bullet, Enemy)
-class Player {
-  constructor(x,y){
-    this.x=x; this.y=y;
-    this.radius=14;
-    this.baseSpeed=180; // px/sec
-    this.speedMultiplier = 1;
-    this.health = 100;
-    this.baseMaxHealth = 100;
-    this.damage = 1;
-  }
-  get maxHealth(){ return this.baseMaxHealth + (state.upgrades.health * 15); }
-  get speed(){ return this.baseSpeed * (1 + (0.1 * state.upgrades.speed)) * this.speedMultiplier; }
-  update(dt){
-    if (inDialogue) return;
-    let dx=0,dy=0;
-    if(input.up) dy-=1;
-    if(input.down) dy+=1;
-    if(input.left) dx-=1;
-    if(input.right) dx+=1;
-    if(dx!==0||dy!==0){
-      const len=Math.hypot(dx,dy); dx/=len; dy/=len;
-      this.x += dx*this.speed*dt; this.y += dy*this.speed*dt;
-      this.x = Math.max(this.radius, Math.min(W-this.radius, this.x));
-      this.y = Math.max(this.radius, Math.min(H-this.radius, this.y));
+// Game State
+let gameState = {
+    canvas: null,
+    ctx: null,
+    keys: {},
+    mouse: { x: 0, y: 0, down: false },
+    player: null,
+    bullets: [],
+    enemyBullets: [],
+    enemies: [],
+    meteorites: [],
+    comets: [],
+    particles: [],
+    boss: null,
+    currentPlanet: null,
+    gameTime: 0,
+    lastSpawnTime: 0,
+    spawnInterval: 2000, // 2 seconds
+    spawnWave: 0,
+    isPaused: false,
+    isGameOver: false,
+    meteoritePieces: 0,
+    unlockedPlanets: ['mercury'],
+    upgrades: {
+        damage: 1,
+        speed: 1,
+        rocketSpeed: 1,
+        health: 1
+    },
+    activeBuffs: [],
+    collectedFacts: [],
+    achievements: {
+        orbitBreaker: false,
+        solarScholar: false,
+        cometRider: 0,
+        planetScholar: 0,
+        ironRocket: false
+    },
+    images: {
+        player: null,
+        enemy: null,
+        meteorite: null
     }
-  }
-  draw(){
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.beginPath();
-    ctx.fillStyle = '#8be8ff';
-    ctx.arc(0,0,this.radius,0,Math.PI*2);
-    ctx.fill();
-    const angle = Math.atan2(input.my - this.y, input.mx - this.x);
-    ctx.rotate(angle);
-    ctx.fillStyle = '#04202b';
-    ctx.fillRect(this.radius-2,-4,12,8);
-    ctx.restore();
-  }
-}
-
-class Bullet {
-  constructor(x,y,vx,vy,damage=1){
-    this.x=x; this.y=y; this.vx=vx; this.vy=vy; this.radius=4; this.life=2; this.damage=damage;
-  }
-  update(dt){ this.x+=this.vx*dt; this.y+=this.vy*dt; this.life-=dt; }
-  draw(){ ctx.beginPath(); ctx.fillStyle='#fff9c4'; ctx.arc(this.x,this.y,this.radius,0,Math.PI*2); ctx.fill(); }
-}
-
-class Enemy {
-  constructor(x,y,type='basic'){
-    this.x=x; this.y=y; this.type=type;
-    this.radius = (type==='boss'?44:(type==='tank'?18:12));
-    this.speed = (type==='boss'?30:(60 + Math.random()*40));
-    this.hp = (type==='boss'?40:(type==='tank'?3:1));
-    this.color = (type==='boss'?'#ff6b6b':(type==='tank'?'#ff8a80':'#ffb267'));
-  }
-  update(dt, player){
-    if(this.type==='boss'){
-      // simple slow move pattern
-      const centerX = W/2;
-      const targetY = 120;
-      const dx = centerX - this.x;
-      this.x += Math.sign(dx) * Math.min(Math.abs(dx), this.speed*dt);
-      if(this.y < targetY) this.y += this.speed*dt;
-    } else {
-      const angle = Math.atan2(player.y - this.y, player.x - this.x);
-      this.x += Math.cos(angle) * this.speed * dt;
-      this.y += Math.sin(angle) * this.speed * dt;
-    }
-  }
-  draw(){
-    ctx.beginPath();
-    ctx.fillStyle = this.color;
-    ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);
-    ctx.fill();
-  }
-}
-
-// ---------- Game State ----------
-const state = {
-  player: new Player(W/2,H/2),
-  bullets: [],
-  enemies: [],
-  score: 0,
-  spawnTimer: 0,
-  spawnInterval: 1.1,
-  shootingCooldown: 0,
-  gameOver: false,
-  meteorites: 0,
-  upgrades: { damage:0, speed:0, health:0 },
-  boss: null
 };
 
-// Utility
-function randRange(a,b){ return a + Math.random() * (b-a); }
-
-// ---------- Spawning ----------
-function spawnEnemy(){
-  if (state.boss) return; // pause normal spawns while boss active
-  const edge = Math.floor(Math.random()*4);
-  let x,y;
-  if(edge===0){ x = randRange(0,W); y = -20; }
-  if(edge===1){ x = randRange(0,W); y = H+20; }
-  if(edge===2){ x = -20; y = randRange(0,H); }
-  if(edge===3){ x = W+20; y = randRange(0,H); }
-  const type = Math.random() < 0.10 ? 'tank' : 'basic';
-  state.enemies.push(new Enemy(x,y,type));
-}
-
-function spawnBoss(){
-  if (state.boss) return;
-  state.boss = new Enemy(W/2, -120, 'boss');
-  state.enemies.push(state.boss);
-  bossSpawned = true;
-}
-
-// ---------- Shooting ----------
-function shootTowards(mx,my){
-  const p = state.player;
-  const angle = Math.atan2(my - p.y, mx - p.x);
-  const baseSpeed = 420;
-  const vx = Math.cos(angle)*baseSpeed;
-  const vy = Math.sin(angle)*baseSpeed;
-
-  // card effects: overcharge chance modifies damage
-  let dmg = state.player.damage + state.upgrades.damage;
-  if (cardSet.has('overcharge') && Math.random() < 0.22) dmg *= 2;
-
-  // RapidFire affects cooldown, handled in update()
-  const bx = p.x + Math.cos(angle)*(p.radius + 6);
-  const by = p.y + Math.sin(angle)*(p.radius + 6);
-  state.bullets.push(new Bullet(bx,by,vx,vy,dmg));
-}
-
-// ---------- Loop & Timing ----------
-function loop(now){
-  const dt = Math.min((now - last)/1000, 0.05);
-  last = now;
-
-  // update only when not gameOver and not in dialogue
-  if(!state.gameOver && !inDialogue) update(dt);
-  draw();
-
-  requestAnimationFrame(loop);
-}
-
-function update(dt){
-  const p = state.player;
-
-  // apply autoRepair card
-  if (cardSet.has('autoRepair')){
-    p.health = Math.min(p.maxHealth, p.health + 6 * dt); // 6 HP/sec regen
-  }
-
-  p.update(dt);
-
-  // shooting cooldown with card effect
-  const baseFireRate = 1/6; // cooldown seconds
-  const rapidMultiplier = cardSet.has('rapidFire') ? 0.6 : 1; // faster
-  state.shootingCooldown -= dt;
-  if(input.mouseDown && state.shootingCooldown <= 0 && !inDialogue){
-    shootTowards(input.mx, input.my);
-    state.shootingCooldown = baseFireRate * rapidMultiplier;
-  }
-
-  // update bullets
-  for(let i=state.bullets.length-1;i>=0;i--){
-    const b = state.bullets[i];
-    b.update(dt);
-    if(b.life <= 0 || b.x < -50 || b.y < -50 || b.x > W+50 || b.y > H+50){
-      state.bullets.splice(i,1);
+// Planet Data
+const planetData = {
+    mercury: {
+        name: 'Mercury',
+        color: '#8C7853',
+        fact: "Mercury orbits the Sun in just 88 days and has extreme temperature variations from 427°C to -173°C!",
+        bossName: "Solar Flare Guardian",
+        difficulty: 1,
+        unlockCost: 0 // Free - starting planet
+    },
+    venus: {
+        name: 'Venus',
+        color: '#FFC649',
+        fact: "Venus has a toxic atmosphere with a runaway greenhouse effect, making it the hottest planet at 462°C!",
+        bossName: "Toxic Atmosphere Guardian",
+        difficulty: 1.2,
+        unlockCost: 50
+    },
+    earth: {
+        name: 'Earth',
+        color: '#6B93D6',
+        fact: "Earth is the only known planet with life, protected by its atmosphere and magnetic field!",
+        bossName: "Planet Defender",
+        difficulty: 1.4,
+        unlockCost: 100
+    },
+    mars: {
+        name: 'Mars',
+        color: '#C1440E',
+        fact: "Mars is called the Red Planet due to iron oxide on its surface. A day on Mars is 24.6 hours!",
+        bossName: "Red Planet Guardian",
+        difficulty: 1.6,
+        unlockCost: 200
+    },
+    jupiter: {
+        name: 'Jupiter',
+        color: '#D8CA9D',
+        fact: "Jupiter is the largest planet with a Great Red Spot storm larger than Earth that's been raging for 400 years!",
+        bossName: "Storm Giant",
+        difficulty: 1.8,
+        unlockCost: 400
+    },
+    saturn: {
+        name: 'Saturn',
+        color: '#FAD5A5',
+        fact: "Saturn's rings are made of ice particles and rock, held together by gravity!",
+        bossName: "Ring Keeper",
+        difficulty: 2.0,
+        unlockCost: 600
+    },
+    uranus: {
+        name: 'Uranus',
+        color: '#4FD0E7',
+        fact: "Uranus rotates on its side at 98° tilt, causing extreme seasons lasting 21 years each!",
+        bossName: "Tilted Guardian",
+        difficulty: 2.2,
+        unlockCost: 800
+    },
+    neptune: {
+        name: 'Neptune',
+        color: '#4B70DD',
+        fact: "Neptune has the fastest winds in the solar system, reaching speeds of 2,100 km/h!",
+        bossName: "Wind Master",
+        difficulty: 2.4,
+        unlockCost: 1000
+    },
+    sun: {
+        name: 'Sun',
+        color: '#FFD700',
+        fact: "The Sun is a star that generates energy through nuclear fusion, converting hydrogen to helium!",
+        bossName: "Solar Core Guardian",
+        difficulty: 3.0,
+        unlockCost: 1500
     }
-  }
+};
 
-  // spawn enemies periodically
-  state.spawnTimer -= dt;
-  if(state.spawnTimer <= 0 && !state.boss){
-    spawnEnemy();
-    state.spawnTimer = Math.max(0.28, state.spawnInterval - Math.min(0.8, state.score*0.02));
-  }
+// Comet Buff Types
+const cometBuffs = [
+    { name: 'Blazing Core', color: '#FF4444', duration: 10000, effect: 'attackSpeed', value: 1.3 },
+    { name: 'Cosmic Pull', color: '#44FF44', duration: 5000, effect: 'magnet', value: 1 },
+    { name: 'Solar Shield', color: '#4444FF', duration: 5000, effect: 'invincible', value: 1 },
+    { name: 'Warp Boost', color: '#FF44FF', duration: 3000, effect: 'speed', value: 2 },
+    { name: 'Ion Burst', color: '#FFFF44', duration: 0, effect: 'nextShot', value: 3 }
+];
 
-  // update enemies
-  for(let i=state.enemies.length-1;i>=0;i--){
-    const e = state.enemies[i];
-    e.update(dt, state.player);
+// Load Images
+function loadImages() {
+    return new Promise((resolve) => {
+        let loaded = 0;
+        const total = 3;
+        
+        const checkLoaded = () => {
+            loaded++;
+            if (loaded === total) {
+                resolve();
+            }
+        };
+        
+        // Load player spaceship
+        gameState.images.player = new Image();
+        gameState.images.player.onload = checkLoaded;
+        gameState.images.player.onerror = checkLoaded;
+        gameState.images.player.src = 'Assets/AllySpaceship.png';
+        
+        // Load enemy spaceship
+        gameState.images.enemy = new Image();
+        gameState.images.enemy.onload = checkLoaded;
+        gameState.images.enemy.onerror = checkLoaded;
+        gameState.images.enemy.src = 'Assets/EnemySpaceship.png';
+        
+        // Load meteorite
+        gameState.images.meteorite = new Image();
+        gameState.images.meteorite.onload = checkLoaded;
+        gameState.images.meteorite.onerror = checkLoaded;
+        gameState.images.meteorite.src = 'Assets/Meteorite.png';
+    });
+}
 
-    // enemy hits player?
-    const dx = e.x - p.x, dy = e.y - p.y;
-    if(Math.hypot(dx,dy) < e.radius + p.radius - 2){
-      // damage player and remove minor enemies (boss won't be instantly removed)
-      if(e.type !== 'boss'){
-        p.health -= 12 + (e.type === 'tank' ? 10 : 0);
-        state.enemies.splice(i,1);
-      } else {
-        p.health -= 25;
-      }
+// Initialize Game
+function initGame() {
+    gameState.canvas = document.getElementById('gameCanvas');
+    gameState.ctx = gameState.canvas.getContext('2d');
+    
+    // Set canvas size
+    gameState.canvas.width = window.innerWidth;
+    gameState.canvas.height = window.innerHeight;
+    
+    // Load images first, then initialize
+    loadImages().then(() => {
+        // Load saved data
+        loadGameData();
+        
+        // Setup event listeners
+        setupEventListeners();
+        
+        // Initialize UI
+        updatePlanetSelect();
+        updateUpgradeShop();
+        updateFactCollection();
+        updateAchievements();
+        
+        // Start game loop
+        gameLoop();
+    });
+}
 
-      if(p.health <= 0){
-        endGame();
-        return;
-      }
-    }
-  }
-
-  // bullets hitting enemies
-  for(let i=state.bullets.length-1;i>=0;i--){
-    const b = state.bullets[i];
-    for(let j=state.enemies.length-1;j>=0;j--){
-      const e = state.enemies[j];
-      if(Math.hypot(b.x - e.x, b.y - e.y) < b.radius + e.radius){
-        e.hp -= b.damage;
-        if(e.hp <= 0){
-          // remove enemy
-          if(e === state.boss) {
-            // boss defeated -> victory
-            state.enemies.splice(j,1);
-            state.boss = null;
-            bossSpawned = false;
-            onBossDefeated();
-          } else {
-            state.enemies.splice(j,1);
-            state.score += (e.type === 'tank' ? 5 : 1);
-            state.meteorites += (e.type === 'tank' ? 3 : 1);
-          }
+// Setup Event Listeners
+function setupEventListeners() {
+    // Keyboard
+    window.addEventListener('keydown', (e) => {
+        gameState.keys[e.key.toLowerCase()] = true;
+        if (e.key === 'Escape' && gameState.currentPlanet) {
+            togglePause();
         }
-        // remove bullet
-        state.bullets.splice(i,1);
-        break;
-      }
+    });
+    
+    window.addEventListener('keyup', (e) => {
+        gameState.keys[e.key.toLowerCase()] = false;
+    });
+    
+    // Mouse
+    gameState.canvas.addEventListener('mousemove', (e) => {
+        const rect = gameState.canvas.getBoundingClientRect();
+        gameState.mouse.x = e.clientX - rect.left;
+        gameState.mouse.y = e.clientY - rect.top;
+    });
+    
+    gameState.canvas.addEventListener('mousedown', () => {
+        gameState.mouse.down = true;
+    });
+    
+    gameState.canvas.addEventListener('mouseup', () => {
+        gameState.mouse.down = false;
+    });
+    
+    // Window resize
+    window.addEventListener('resize', () => {
+        if (gameState.canvas) {
+            gameState.canvas.width = window.innerWidth;
+            gameState.canvas.height = window.innerHeight;
+        }
+    });
+}
+
+// Screen Management
+function showScreen(screenId) {
+    document.querySelectorAll('.screen').forEach(screen => {
+        screen.classList.remove('active');
+    });
+    document.getElementById(screenId).classList.add('active');
+    
+    // Hide menu options when navigating away from main menu, or show starting screen when returning
+    if (screenId === 'mainMenu') {
+        hideMenuOptions(); // Reset to starting screen
     }
-  }
-
-  // update HUD
-  scoreEl.textContent = `Score: ${state.score}`;
-  const displayedHealth = Math.max(0, Math.round(p.health));
-  healthEl.textContent = `Health: ${displayedHealth}`;
-  meteoriteCountEl.textContent = state.meteorites;
-  shopMeteoriteCount.textContent = state.meteorites;
-
-  // Boss timer display
-  if (!gameStartTime) bossTimerEl.textContent = '--';
-  else {
-    const elapsed = (performance.now() - gameStartTime)/1000;
-    const remaining = Math.max(0, Math.ceil(BOSS_TIME - elapsed));
-    bossTimerEl.textContent = remaining;
-    if (remaining <= 0 && !bossSpawned){
-      spawnBoss();
+    
+    if (screenId === 'gameScreen') {
+        startGame();
+    } else if (screenId === 'planetSelect') {
+        updatePlanetSelect();
+    } else if (screenId === 'upgradeShop') {
+        updateUpgradeShop();
     }
-  }
 }
 
-// ---------- Boss defeated / victory ----------
-function onBossDefeated(){
-  // simple victory: show dialogue box summarizing
-  dialogueText.textContent = "Boss defeated! Mission success. You unlocked the next planet.";
-  dialogueBox.classList.remove('hidden');
-  inDialogue = true;
-  // score reward
-  state.score += 50;
-  // allow restart -> start screen when player clicks Next
-  dialogueIndex = dialogues.length; // treat as finished so Next will go to start-screen flow
-}
-
-// ---------- Draw ----------
-function draw(){
-  ctx.clearRect(0,0,W,H);
-  
-
-  // subtle grid
-  const grid = 40;
-  ctx.save(); ctx.globalAlpha = 0.06; ctx.strokeStyle = '#ffffff';
-  for(let x=0;x<W;x+=grid){ ctx.beginPath(); ctx.moveTo(x+0.5,0); ctx.lineTo(x+0.5,H); ctx.stroke(); }
-  for(let y=0;y<H;y+=grid){ ctx.beginPath(); ctx.moveTo(0,y+0.5); ctx.lineTo(W,y+0.5); ctx.stroke(); }
-  ctx.restore();
-
-  // bullets
-  for(const b of state.bullets) b.draw();
-
-  // enemies
-  for(const e of state.enemies) e.draw();
-
-  // player
-  state.player.draw();
-
-  // crosshair
-  ctx.beginPath();
-  ctx.arc(input.mx, input.my, 6, 0, Math.PI*2);
-  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.stroke();
-
-  // if game over overlay (canvas side)
-  if(state.gameOver){
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.fillRect(0,0,W,H);
-  }
-}
-
-// ---------- Game over and reset ----------
-function endGame(){
-  state.gameOver = true;
-  gameOverOverlay.classList.remove('hidden');
-  finalScoreEl.textContent = `Score: ${state.score}`;
-}
-
-function resetGame(){
-  // reset state
-  state.player = new Player(W/2, H/2);
-  state.bullets = [];
-  state.enemies = [];
-  state.score = 0;
-  state.spawnTimer = 0.6;
-  state.shootingCooldown = 0;
-  state.gameOver = false;
-  state.meteorites = 0;
-  state.upgrades = { damage:0, speed:0, health:0 };
-  state.boss = null;
-  bossSpawned = false;
-  inDialogue = true;
-  dialogueIndex = 0;
-  selectedCards = []; cardSet.clear();
-  // UI
-  meteoriteCountEl.textContent = state.meteorites;
-  scoreEl.textContent = `Score: ${state.score}`;
-  healthEl.textContent = `Health: ${state.player.health}`;
-  shopMeteoriteCount.textContent = state.meteorites;
-  // show start screen
-  startScreen.classList.remove('hidden');
-  dialogueBox.classList.add('hidden');
-  cardMenu.classList.add('hidden');
-  shopPanel.classList.add('hidden');
-  gameOverOverlay.classList.add('hidden');
-  bossTimerEl.textContent = '--';
-}
-
-restartBtn.addEventListener('click', ()=> resetGame());
-
-// ---------- Start / Dialogue / Cards / Shop Handlers ----------
-btnStart.addEventListener('click', ()=>{
-  // open card menu first
-  startScreen.classList.add('hidden');
-  openCardMenu();
-});
-btnHelp.addEventListener('click', ()=> {
-  alert('WASD to move, mouse aim + click/hold to shoot. Collect meteorites to buy upgrades in the shop.');
-});
-btnShopSS.addEventListener('click', () => {
-  startScreen.classList.add('hidden');
-  shopPanel.classList.remove('hidden');
-});
-
-// Card menu open
-document.getElementById('open-cards').addEventListener('click', openCardMenu);
-function openCardMenu(){
-  cardSet.clear();
-  selectedCards = [];
-  cardButtons.forEach(b => b.classList.remove('selected'));
-  cardMenu.classList.remove('hidden');
-}
-
-// card selection toggling
-cardButtons.forEach(btn=>{
-  btn.addEventListener('click', ()=> {
-    const id = btn.dataset.card;
-    if(btn.classList.contains('selected')){
-      btn.classList.remove('selected');
-      cardSet.delete(id);
-    } else {
-      if(cardSet.size >= MAX_CARD_SELECTION){
-        alert(`You can only select up to ${MAX_CARD_SELECTION} cards.`);
+function selectPlanet(planetName) {
+    const planet = planetData[planetName];
+    
+    // Check if already unlocked
+    if (gameState.unlockedPlanets.includes(planetName)) {
+        gameState.currentPlanet = planetName;
+        showScreen('gameScreen');
         return;
-      }
-      btn.classList.add('selected');
-      cardSet.add(id);
     }
-  });
-});
-
-// confirm or cancel
-confirmCardsBtn.addEventListener('click', ()=>{
-  selectedCards = Array.from(cardSet);
-  cardMenu.classList.add('hidden');
-  // start dialogue after card selection
-  dialogueIndex = 0;
-  showDialogueLine(dialogues[dialogueIndex]);
-  dialogueBox.classList.remove('hidden');
-  inDialogue = true;
-});
-cancelCardsBtn && cancelCardsBtn.addEventListener('click', ()=>{
-  cardMenu.classList.add('hidden');
-  startScreen.classList.remove('hidden');
-});
-
-// Dialogue next
-nextDialogueBtn.addEventListener('click', ()=> {
-  dialogueIndex++;
-  if(dialogueIndex < dialogues.length){
-    showDialogueLine(dialogues[dialogueIndex]);
-  } else {
-    // end dialogue and start game
-    dialogueBox.classList.add('hidden');
-    inDialogue = false;
-    gameStartTime = performance.now();
-    last = performance.now();
-  }
-});
-function showDialogueLine(text){
-  dialogueText.textContent = text;
-  dialogueBox.classList.remove('hidden');
+    
+    // Check if player has enough meteorite pieces to unlock
+    if (gameState.meteoritePieces >= planet.unlockCost) {
+        if (confirm(`Unlock ${planet.name} for ${planet.unlockCost} meteorite pieces?`)) {
+            gameState.meteoritePieces -= planet.unlockCost;
+            gameState.unlockedPlanets.push(planetName);
+            updatePlanetSelect();
+            updateUpgradeShop();
+            saveGameData();
+            
+            // Auto-select the planet after unlocking
+            gameState.currentPlanet = planetName;
+            showScreen('gameScreen');
+        }
+    } else {
+        alert(`This planet is locked! You need ${planet.unlockCost} meteorite pieces to unlock ${planet.name}. You have ${gameState.meteoritePieces}.`);
+    }
 }
 
-// ---------- Shop handlers ----------
-openShopBtn.addEventListener('click', ()=> { shopPanel.classList.remove('hidden'); shopMeteoriteCount.textContent = state.meteorites; });
-document.getElementById('close-shop').addEventListener('click', ()=> shopPanel.classList.add('hidden'));
+function startGame() {
+    if (!gameState.currentPlanet) return;
+    
+    // Reset game state
+    gameState.gameTime = 0;
+    gameState.lastSpawnTime = 0;
+    gameState.spawnWave = 0;
+    gameState.isPaused = false;
+    gameState.isGameOver = false;
+    gameState.bullets = [];
+    gameState.enemyBullets = [];
+    gameState.enemies = [];
+    gameState.meteorites = [];
+    gameState.comets = [];
+    gameState.particles = [];
+    gameState.boss = null;
+    gameState.activeBuffs = [];
+    
+    // Create player
+    const planet = planetData[gameState.currentPlanet];
+    gameState.player = {
+        x: gameState.canvas.width / 2,
+        y: gameState.canvas.height / 2,
+        width: 80,
+        height: 80,
+        speed: 5 + (gameState.upgrades.rocketSpeed - 1) * 0.5,
+        health: 100 + (gameState.upgrades.health - 1) * 20,
+        maxHealth: 100 + (gameState.upgrades.health - 1) * 20,
+        lastShot: 0,
+        shootCooldown: 200 - (gameState.upgrades.speed - 1) * 10,
+        invincible: false,
+        invincibleTime: 0
+    };
+    
+    // Show planet intro dialogue
+    showDialogue(planet.name, planet.fact);
+    
+    // Update UI
+    updateHUD();
+    document.getElementById('planetDisplay').textContent = planet.name;
+}
 
-// Buy buttons
-document.querySelectorAll('#shop-panel .buy').forEach(btn=>{
-  btn.addEventListener('click', ()=>{
-    const type = btn.dataset.type;
-    const cost = SHOP_COST_BASE + state.upgrades[type] * 10;
-    if(state.meteorites >= cost){
-      state.meteorites -= cost;
-      state.upgrades[type] += 1;
-      // apply immediate small effects
-      if(type === 'health') state.player.health = Math.min(state.player.maxHealth, state.player.health + 15);
-      shopMeteoriteCount.textContent = state.meteorites;
-      meteoriteCountEl.textContent = state.meteorites;
-      alert('Purchase successful!');
-    } else alert('Not enough meteorite pieces.');
-  });
+// Game Loop
+function gameLoop() {
+    if (!gameState.isPaused && !gameState.isGameOver && gameState.currentPlanet) {
+        update();
+    }
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// Update Game
+function update() {
+    if (!gameState.player) return;
+    
+    const dt = 16; // ~60fps
+    gameState.gameTime += dt;
+    
+    // Update player
+    updatePlayer();
+    
+    // Update bullets
+    updateBullets();
+    updateEnemyBullets();
+    
+    // Spawn enemies and meteorites (timer-based)
+    handleSpawnTimer();
+    spawnComets();
+    
+    // Update entities
+    updateEnemies();
+    updateMeteorites();
+    updateComets();
+    updateParticles();
+    
+    // Update boss
+    if (gameState.boss) {
+        updateBoss();
+    } else if (gameState.gameTime >= 600000) { // 10 minutes
+        spawnBoss();
+    }
+    
+    // Update buffs
+    updateBuffs();
+    
+    // Collision detection
+    checkCollisions();
+    
+    // Update UI
+    updateHUD();
+    
+    // Check game over
+    if (gameState.player.health <= 0) {
+        gameOver(false);
+    }
+    
+    if (gameState.boss && gameState.boss.health <= 0) {
+        gameOver(true);
+    }
+}
+
+// Update Player
+function updatePlayer() {
+    const player = gameState.player;
+    const speed = player.speed * (gameState.activeBuffs.find(b => b.effect === 'speed') ? gameState.activeBuffs.find(b => b.effect === 'speed').value : 1);
+    
+    // Movement
+    if (gameState.keys['w'] || gameState.keys['W']) player.y -= speed;
+    if (gameState.keys['s'] || gameState.keys['S']) player.y += speed;
+    if (gameState.keys['a'] || gameState.keys['A']) player.x -= speed;
+    if (gameState.keys['d'] || gameState.keys['D']) player.x += speed;
+    
+    // Keep player in bounds
+    player.x = Math.max(player.width/2, Math.min(gameState.canvas.width - player.width/2, player.x));
+    player.y = Math.max(player.height/2, Math.min(gameState.canvas.height - player.height/2, player.y));
+    
+    // Shooting
+    const now = Date.now();
+    const attackSpeed = gameState.activeBuffs.find(b => b.effect === 'attackSpeed') ? gameState.activeBuffs.find(b => b.effect === 'attackSpeed').value : 1;
+    const cooldown = player.shootCooldown / attackSpeed;
+    
+    if (gameState.mouse.down && now - player.lastShot > cooldown) {
+        shoot();
+        player.lastShot = now;
+    }
+    
+    // Invincibility
+    if (player.invincible) {
+        player.invincibleTime -= 16;
+        if (player.invincibleTime <= 0) {
+            player.invincible = false;
+        }
+    }
+}
+
+// Shoot
+function shoot() {
+    const player = gameState.player;
+    
+    const damage = 10 + (gameState.upgrades.damage - 1) * 5;
+    const multiplier = gameState.activeBuffs.find(b => b.effect === 'nextShot') ? gameState.activeBuffs.find(b => b.effect === 'nextShot').value : 1;
+    
+    // Remove nextShot buff after use
+    const nextShotIndex = gameState.activeBuffs.findIndex(b => b.effect === 'nextShot');
+    if (nextShotIndex !== -1) {
+        gameState.activeBuffs.splice(nextShotIndex, 1);
+    }
+    
+    // Shoot straight up
+    const speed = 8 + (gameState.upgrades.rocketSpeed - 1) * 1;
+    gameState.bullets.push({
+        x: player.x,
+        y: player.y,
+        vx: 0, // No horizontal movement
+        vy: -speed, // Move straight up (negative Y)
+        damage: damage * multiplier,
+        radius: 5
+    });
+}
+
+// Update Bullets
+function updateBullets() {
+    gameState.bullets = gameState.bullets.filter(bullet => {
+        bullet.x += bullet.vx;
+        bullet.y += bullet.vy;
+        
+        // Remove if out of bounds
+        return bullet.x > 0 && bullet.x < gameState.canvas.width &&
+               bullet.y > 0 && bullet.y < gameState.canvas.height;
+    });
+}
+
+// Update Enemy Bullets
+function updateEnemyBullets() {
+    gameState.enemyBullets = gameState.enemyBullets.filter(bullet => {
+        bullet.x += bullet.vx;
+        bullet.y += bullet.vy;
+        
+        // Remove if out of bounds
+        return bullet.x > -50 && bullet.x < gameState.canvas.width + 50 &&
+               bullet.y > -50 && bullet.y < gameState.canvas.height + 50;
+    });
+}
+
+// Check if there are active enemy formations
+function hasActiveFormation() {
+    return gameState.enemies.some(enemy => enemy.inFormation && enemy.y < gameState.canvas.height + 50);
+}
+
+// Handle Spawn Timer (spawns every 2 seconds with progressive difficulty)
+function handleSpawnTimer() {
+    const timeSinceLastSpawn = gameState.gameTime - gameState.lastSpawnTime;
+    
+    // Spawn every 2 seconds (2000ms)
+    if (timeSinceLastSpawn >= gameState.spawnInterval) {
+        gameState.lastSpawnTime = gameState.gameTime;
+        gameState.spawnWave++;
+        
+        // Calculate progressive difficulty
+        const planet = planetData[gameState.currentPlanet];
+        const baseDifficulty = planet.difficulty;
+        const timeMultiplier = 1 + (gameState.gameTime / 600000); // Gets harder over 10 minutes
+        const waveMultiplier = 1 + (gameState.spawnWave * 0.05); // Gets harder each wave
+        const difficulty = baseDifficulty * timeMultiplier * waveMultiplier;
+        
+        // Check if there's an active formation
+        const hasFormation = hasActiveFormation();
+        
+        // Calculate how many obstacles to spawn (increases over time)
+        const minutesElapsed = gameState.gameTime / 60000;
+        let spawnCount = 1;
+        
+        if (minutesElapsed >= 1) spawnCount = 2; // After 1 minute, spawn 2
+        if (minutesElapsed >= 3) spawnCount = 3; // After 3 minutes, spawn 3
+        if (minutesElapsed >= 5) spawnCount = 4; // After 5 minutes, spawn 4
+        if (minutesElapsed >= 7) spawnCount = 5; // After 7 minutes, spawn 5
+        
+        // Spawn mix of enemies and meteorites
+        for (let i = 0; i < spawnCount; i++) {
+            // If spawning multiple obstacles, alternate between types
+            // If spawning single obstacle, alternate by wave number
+            if (spawnCount > 1) {
+                // Multiple obstacles: alternate within the wave
+                if (i % 2 === 0) {
+                    // Only spawn formation if there's no active formation
+                    if (!hasFormation && Math.random() < 0.3) {
+                        spawnEnemyFormation(difficulty);
+                    } else {
+                        spawnEnemy(difficulty);
+                    }
+                } else {
+                    spawnMeteorite(difficulty);
+                }
+            } else {
+                // Single obstacle: alternate by wave
+                if (gameState.spawnWave % 2 === 0) {
+                    // Only spawn formation if there's no active formation
+                    if (!hasFormation && Math.random() < 0.3) {
+                        spawnEnemyFormation(difficulty);
+                    } else {
+                        spawnEnemy(difficulty);
+                    }
+                } else {
+                    spawnMeteorite(difficulty);
+                }
+            }
+        }
+    }
+}
+
+// Spawn Single Enemy
+function spawnEnemy(difficulty) {
+    // Spawn from top of screen
+    const x = Math.random() * gameState.canvas.width;
+    const y = -30;
+    
+    gameState.enemies.push({
+        x: x,
+        y: y,
+        width: 60,
+        height: 60,
+        speed: 1 + difficulty * 0.3, // Horizontal speed for hovering
+        fallSpeed: 1 + difficulty * 0.2, // Vertical fall speed
+        health: 20 + difficulty * 10,
+        maxHealth: 20 + difficulty * 10,
+        color: '#FF0000',
+        lastShot: 0,
+        shootCooldown: 2000 - (difficulty * 100), // Shoot every 2 seconds (faster with difficulty)
+        targetX: x, // Target X position to hover over player
+        inFormation: false,
+        formationType: null,
+        formationIndex: 0,
+        formationCenterX: 0,
+        formationCenterY: 0,
+        stopY: 0 // Y position where formation stops
+    });
+}
+
+// Spawn Enemy Formation
+function spawnEnemyFormation(difficulty) {
+    const formationTypes = ['horizontal', 'circle', 'diagonal', 'v-shape'];
+    const formationType = formationTypes[Math.floor(Math.random() * formationTypes.length)];
+    const formationSize = 3 + Math.floor(Math.random() * 3); // 3-5 enemies
+    
+    const centerX = Math.random() * (gameState.canvas.width - 200) + 100; // Keep formation on screen
+    const stopY = 100 + Math.random() * 50; // Stop at top of screen (100-150px from top)
+    
+    for (let i = 0; i < formationSize; i++) {
+        let x, y;
+        
+        switch(formationType) {
+            case 'horizontal':
+                // Horizontal line formation
+                const spacing = 80;
+                const startX = centerX - ((formationSize - 1) * spacing) / 2;
+                x = startX + i * spacing;
+                y = -30;
+                break;
+                
+            case 'circle':
+                // Circle formation
+                const radius = 60 + formationSize * 8;
+                const angle = (i / formationSize) * Math.PI * 2;
+                x = centerX + Math.cos(angle) * radius;
+                y = -30;
+                break;
+                
+            case 'diagonal':
+                // Diagonal line formation
+                const diagonalSpacing = 70;
+                x = centerX + (i - (formationSize - 1) / 2) * diagonalSpacing;
+                y = -30 - (i * 20); // Stagger vertically
+                break;
+                
+            case 'v-shape':
+                // V-shape formation
+                const vSpacing = 70;
+                const vOffset = Math.abs(i - (formationSize - 1) / 2) * vSpacing;
+                x = centerX + (i < formationSize / 2 ? -vOffset : vOffset);
+                y = -30 - (Math.abs(i - (formationSize - 1) / 2) * 15);
+                break;
+        }
+        
+        gameState.enemies.push({
+            x: x,
+            y: y,
+            width: 60,
+            height: 60,
+            speed: 1 + difficulty * 0.3,
+            fallSpeed: 1 + difficulty * 0.2,
+            health: 20 + difficulty * 10,
+            maxHealth: 20 + difficulty * 10,
+            color: '#FF0000',
+            lastShot: 0,
+            shootCooldown: 2000 - (difficulty * 100),
+            targetX: x,
+            inFormation: true,
+            formationType: formationType,
+            formationIndex: i,
+            formationSize: formationSize,
+            formationCenterX: centerX,
+            formationCenterY: stopY,
+            stopY: stopY,
+            originalX: x // Store original position in formation
+        });
+    }
+}
+
+// Update Enemies
+function updateEnemies() {
+    const player = gameState.player;
+    const now = Date.now();
+    
+    gameState.enemies.forEach(enemy => {
+        if (enemy.inFormation) {
+            // Formation behavior: stop at top and maintain formation
+            const targetY = enemy.stopY + (enemy.formationType === 'diagonal' ? enemy.formationIndex * 20 : 0) + 
+                           (enemy.formationType === 'v-shape' ? Math.abs(enemy.formationIndex - (enemy.formationSize - 1) / 2) * 15 : 0);
+            
+            if (enemy.y < targetY) {
+                // Still falling to formation position
+                enemy.y += enemy.fallSpeed;
+                if (enemy.y > targetY) enemy.y = targetY; // Don't overshoot
+                
+                // Update formation position based on type
+                updateFormationPosition(enemy);
+            } else {
+                // Reached formation position - stop and maintain formation
+                enemy.y = targetY;
+                updateFormationPosition(enemy);
+                
+                // Shoot downward at player (only shoot downward, not upward)
+                if (now - enemy.lastShot > enemy.shootCooldown && enemy.y < player.y) {
+                    // Only shoot if enemy is above player
+                    const bulletDx = player.x - enemy.x;
+                    const bulletDy = player.y - enemy.y;
+                    const bulletDist = Math.sqrt(bulletDx * bulletDx + bulletDy * bulletDy);
+                    
+                    if (bulletDist > 0 && bulletDy > 0) { // Only shoot downward
+                        gameState.enemyBullets.push({
+                            x: enemy.x,
+                            y: enemy.y,
+                            vx: (bulletDx / bulletDist) * 3,
+                            vy: Math.abs((bulletDy / bulletDist) * 3), // Always positive (downward)
+                            radius: 5,
+                            damage: 10
+                        });
+                        enemy.lastShot = now;
+                    }
+                }
+            }
+        } else {
+            // Single enemy behavior: hover and fall
+            // Update target X position to hover over player
+            enemy.targetX = player.x;
+            
+            // Move horizontally towards player's X position (hover)
+            const dx = enemy.targetX - enemy.x;
+            if (Math.abs(dx) > 5) {
+                enemy.x += Math.sign(dx) * enemy.speed;
+            } else {
+                enemy.x = enemy.targetX; // Snap to position when close
+            }
+            
+            // Fall down
+            enemy.y += enemy.fallSpeed;
+            
+            // Shoot downward at player (only shoot downward, not upward)
+            if (now - enemy.lastShot > enemy.shootCooldown && enemy.y < player.y && enemy.y > 50) {
+                // Only shoot if enemy is above player
+                const bulletDx = player.x - enemy.x;
+                const bulletDy = player.y - enemy.y;
+                const bulletDist = Math.sqrt(bulletDx * bulletDx + bulletDy * bulletDy);
+                
+                if (bulletDist > 0 && bulletDy > 0) { // Only shoot downward
+                    gameState.enemyBullets.push({
+                        x: enemy.x,
+                        y: enemy.y,
+                        vx: (bulletDx / bulletDist) * 3,
+                        vy: Math.abs((bulletDy / bulletDist) * 3), // Always positive (downward)
+                        radius: 5,
+                        damage: 10
+                    });
+                    enemy.lastShot = now;
+                }
+            }
+        }
+    });
+    
+    // Remove enemies that are off screen
+    gameState.enemies = gameState.enemies.filter(enemy => 
+        enemy.y < gameState.canvas.height + 50
+    );
+}
+
+// Update Formation Position
+function updateFormationPosition(enemy) {
+    if (!enemy.inFormation) return;
+    
+    const player = gameState.player;
+    
+    // Update formation center to follow player horizontally
+    enemy.formationCenterX = player.x;
+    
+    // Calculate position in formation
+    switch(enemy.formationType) {
+        case 'horizontal':
+            const spacing = 80;
+            const startX = enemy.formationCenterX - ((enemy.formationSize - 1) * spacing) / 2;
+            enemy.x = startX + enemy.formationIndex * spacing;
+            break;
+            
+        case 'circle':
+            const radius = 60;
+            const angle = (enemy.formationIndex / enemy.formationSize) * Math.PI * 2;
+            enemy.x = enemy.formationCenterX + Math.cos(angle) * radius;
+            // Circle formation maintains same Y (all at stopY)
+            break;
+            
+        case 'diagonal':
+            const diagonalSpacing = 70;
+            enemy.x = enemy.formationCenterX + (enemy.formationIndex - (enemy.formationSize - 1) / 2) * diagonalSpacing;
+            break;
+            
+        case 'v-shape':
+            const vSpacing = 70;
+            const vOffset = Math.abs(enemy.formationIndex - (enemy.formationSize - 1) / 2) * vSpacing;
+            enemy.x = enemy.formationCenterX + (enemy.formationIndex < enemy.formationSize / 2 ? -vOffset : vOffset);
+            break;
+    }
+    
+    // Keep formation on screen
+    enemy.x = Math.max(15, Math.min(gameState.canvas.width - 15, enemy.x));
+}
+
+// Spawn Single Meteorite
+function spawnMeteorite(difficulty) {
+    // Spawn from top of screen
+    const x = Math.random() * gameState.canvas.width;
+    const y = -30;
+    
+    // Small horizontal drift, but mostly falls straight down
+    const vx = (Math.random() - 0.5) * 1; // Minimal horizontal movement
+    const vy = 3 + difficulty * 0.5; // Falls down
+    
+    // Size increases slightly with difficulty
+    const baseSize = 40;
+    const sizeVariation = 60;
+    const difficultySize = difficulty * 10;
+    const size = baseSize + Math.random() * sizeVariation + difficultySize;
+    
+    gameState.meteorites.push({
+        x: x,
+        y: y,
+        vx: vx,
+        vy: vy,
+        radius: size,
+        health: size,
+        maxHealth: size
+    });
+}
+
+// Update Meteorites
+function updateMeteorites() {
+    gameState.meteorites.forEach(meteorite => {
+        meteorite.x += meteorite.vx;
+        meteorite.y += meteorite.vy;
+    });
+    
+    // Remove out of bounds
+    gameState.meteorites = gameState.meteorites.filter(m => 
+        m.x > -50 && m.x < gameState.canvas.width + 50 &&
+        m.y > -50 && m.y < gameState.canvas.height + 50
+    );
+}
+
+// Spawn Comets
+function spawnComets() {
+    if (Math.random() < 0.001) { // Rare spawn
+        const side = Math.floor(Math.random() * 4);
+        let x, y;
+        
+        switch(side) {
+            case 0: x = Math.random() * gameState.canvas.width; y = -20; break;
+            case 1: x = gameState.canvas.width + 20; y = Math.random() * gameState.canvas.height; break;
+            case 2: x = Math.random() * gameState.canvas.width; y = gameState.canvas.height + 20; break;
+            case 3: x = -20; y = Math.random() * gameState.canvas.height; break;
+        }
+        
+        const buffType = cometBuffs[Math.floor(Math.random() * cometBuffs.length)];
+        
+        gameState.comets.push({
+            x: x,
+            y: y,
+            radius: 15,
+            buff: buffType,
+            vx: (Math.random() - 0.5) * 2,
+            vy: (Math.random() - 0.5) * 2
+        });
+    }
+}
+
+// Update Comets
+function updateComets() {
+    gameState.comets.forEach(comet => {
+        comet.x += comet.vx;
+        comet.y += comet.vy;
+    });
+    
+    gameState.comets = gameState.comets.filter(c => 
+        c.x > -50 && c.x < gameState.canvas.width + 50 &&
+        c.y > -50 && c.y < gameState.canvas.height + 50
+    );
+}
+
+// Update Particles
+function updateParticles() {
+    gameState.particles.forEach(particle => {
+        particle.x += particle.vx;
+        particle.y += particle.vy;
+        particle.life--;
+        particle.alpha = particle.life / particle.maxLife;
+    });
+    
+    gameState.particles = gameState.particles.filter(p => p.life > 0);
+}
+
+// Spawn Boss
+function spawnBoss() {
+    const planet = planetData[gameState.currentPlanet];
+    const difficulty = planet.difficulty;
+    
+    gameState.boss = {
+        x: gameState.canvas.width / 2,
+        y: 100,
+        width: 150,
+        height: 150,
+        health: 500 * difficulty,
+        maxHealth: 500 * difficulty,
+        speed: 2,
+        direction: 1,
+        lastShot: 0,
+        shootCooldown: 1000,
+        name: planet.bossName
+    };
+    
+    document.getElementById('bossHealthBar').classList.remove('hidden');
+    document.querySelector('.boss-name').textContent = planet.bossName;
+}
+
+// Update Boss
+function updateBoss() {
+    const boss = gameState.boss;
+    
+    // Move boss
+    boss.x += boss.speed * boss.direction;
+    if (boss.x <= boss.width/2 || boss.x >= gameState.canvas.width - boss.width/2) {
+        boss.direction *= -1;
+    }
+    
+    // Boss shooting
+    const now = Date.now();
+    if (now - boss.lastShot > boss.shootCooldown) {
+        const dx = gameState.player.x - boss.x;
+        const dy = gameState.player.y - boss.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist > 0) {
+            gameState.enemies.push({
+                x: boss.x,
+                y: boss.y,
+                width: 25,
+                height: 25,
+                speed: 3,
+                health: 15,
+                maxHealth: 15,
+                color: '#FF6600'
+            });
+        }
+        
+        boss.lastShot = now;
+    }
+    
+    // Update boss health bar
+    const healthPercent = (boss.health / boss.maxHealth) * 100;
+    document.querySelector('.health-bar-fill').style.width = healthPercent + '%';
+}
+
+// Check Collisions
+function checkCollisions() {
+    const player = gameState.player;
+    
+    // Bullets vs Enemies
+    gameState.bullets.forEach((bullet, bi) => {
+        gameState.enemies.forEach((enemy, ei) => {
+            const dx = bullet.x - enemy.x;
+            const dy = bullet.y - enemy.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (dist < enemy.width/2 + bullet.radius) {
+                enemy.health -= bullet.damage;
+                gameState.bullets.splice(bi, 1);
+                
+                // Create particles
+                createParticles(enemy.x, enemy.y, '#FF0000');
+                
+                if (enemy.health <= 0) {
+                    gameState.meteoritePieces += 2;
+                    updateUpgradeShop(); // Update shop display
+                    saveGameData(); // Save immediately
+                    gameState.enemies.splice(ei, 1);
+                }
+            }
+        });
+        
+        // Bullets vs Meteorites
+        gameState.meteorites.forEach((meteorite, mi) => {
+            const dx = bullet.x - meteorite.x;
+            const dy = bullet.y - meteorite.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (dist < meteorite.radius + bullet.radius) {
+                meteorite.health -= bullet.damage;
+                gameState.bullets.splice(bi, 1);
+                
+                createParticles(meteorite.x, meteorite.y, '#888888');
+                
+                if (meteorite.health <= 0) {
+                    const pieces = Math.floor(meteorite.radius / 10);
+                    gameState.meteoritePieces += pieces;
+                    updateUpgradeShop(); // Update shop display
+                    saveGameData(); // Save immediately
+                    createParticles(meteorite.x, meteorite.y, '#FFFF00', 10);
+                    gameState.meteorites.splice(mi, 1);
+                }
+            }
+        });
+        
+        // Bullets vs Boss
+        if (gameState.boss) {
+            const dx = bullet.x - gameState.boss.x;
+            const dy = bullet.y - gameState.boss.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (dist < gameState.boss.width/2 + bullet.radius) {
+                gameState.boss.health -= bullet.damage;
+                gameState.bullets.splice(bi, 1);
+                createParticles(gameState.boss.x, gameState.boss.y, '#FF0000');
+            }
+        }
+    });
+    
+    // Player vs Enemies
+    if (!player.invincible) {
+        gameState.enemies.forEach((enemy, ei) => {
+            const dx = player.x - enemy.x;
+            const dy = player.y - enemy.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (dist < player.width/2 + enemy.width/2) {
+                player.health -= 10;
+                player.invincible = true;
+                player.invincibleTime = 2000;
+                gameState.enemies.splice(ei, 1);
+                createParticles(player.x, player.y, '#00FFFF');
+            }
+        });
+        
+        // Player vs Meteorites
+        gameState.meteorites.forEach((meteorite, mi) => {
+            const dx = player.x - meteorite.x;
+            const dy = player.y - meteorite.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (dist < player.width/2 + meteorite.radius) {
+                player.health -= 15;
+                player.invincible = true;
+                player.invincibleTime = 2000;
+                meteorite.health -= 50;
+                createParticles(player.x, player.y, '#00FFFF');
+                
+                if (meteorite.health <= 0) {
+                    gameState.meteorites.splice(mi, 1);
+                }
+            }
+        });
+    }
+    
+    // Player vs Enemy Bullets
+    if (!player.invincible) {
+        gameState.enemyBullets.forEach((bullet, bi) => {
+            const dx = player.x - bullet.x;
+            const dy = player.y - bullet.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (dist < player.width/2 + bullet.radius) {
+                player.health -= bullet.damage;
+                player.invincible = true;
+                player.invincibleTime = 2000;
+                gameState.enemyBullets.splice(bi, 1);
+                createParticles(player.x, player.y, '#00FFFF');
+            }
+        });
+    }
+    
+    // Player vs Comets
+    gameState.comets.forEach((comet, ci) => {
+        const dx = player.x - comet.x;
+        const dy = player.y - comet.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist < player.width/2 + comet.radius) {
+            applyBuff(comet.buff);
+            gameState.comets.splice(ci, 1);
+            gameState.achievements.cometRider++;
+            createParticles(comet.x, comet.y, comet.buff.color, 15);
+        }
+    });
+    
+    // Cosmic Pull effect
+    const magnetBuff = gameState.activeBuffs.find(b => b.effect === 'magnet');
+    if (magnetBuff) {
+        // Attract meteorite pieces (visual effect)
+        // In a full implementation, you'd have collectible pieces
+    }
+}
+
+// Create Particles
+function createParticles(x, y, color, count = 5) {
+    for (let i = 0; i < count; i++) {
+        gameState.particles.push({
+            x: x,
+            y: y,
+            vx: (Math.random() - 0.5) * 4,
+            vy: (Math.random() - 0.5) * 4,
+            radius: 3,
+            color: color,
+            life: 30,
+            maxLife: 30,
+            alpha: 1
+        });
+    }
+}
+
+// Apply Buff
+function applyBuff(buff) {
+    if (buff.effect === 'invincible') {
+        gameState.player.invincible = true;
+        gameState.player.invincibleTime = buff.duration;
+    }
+    
+    gameState.activeBuffs.push({
+        ...buff,
+        startTime: Date.now()
+    });
+    
+    updateBuffDisplay();
+}
+
+// Update Buffs
+function updateBuffs() {
+    const now = Date.now();
+    gameState.activeBuffs = gameState.activeBuffs.filter(buff => {
+        if (buff.duration === 0) return true; // Permanent until used
+        return now - buff.startTime < buff.duration;
+    });
+    
+    // Update invincibility
+    if (gameState.player.invincible) {
+        const invincibleBuff = gameState.activeBuffs.find(b => b.effect === 'invincible');
+        if (!invincibleBuff) {
+            gameState.player.invincible = false;
+        }
+    }
+    
+    updateBuffDisplay();
+}
+
+// Update Buff Display
+function updateBuffDisplay() {
+    const display = document.getElementById('buffDisplay');
+    display.innerHTML = '';
+    
+    gameState.activeBuffs.forEach(buff => {
+        const item = document.createElement('div');
+        item.className = 'buff-item';
+        item.style.borderColor = buff.color;
+        item.textContent = buff.name;
+        display.appendChild(item);
+    });
+}
+
+// Draw Game
+function draw() {
+    if (!gameState.canvas || !gameState.ctx) return;
+    
+    const ctx = gameState.ctx;
+    const planet = gameState.currentPlanet ? planetData[gameState.currentPlanet] : null;
+    
+    // Clear canvas completely first (removes all traces)
+    ctx.clearRect(0, 0, gameState.canvas.width, gameState.canvas.height);
+    
+    // Draw background
+    ctx.fillStyle = planet ? planet.color + '20' : '#000011';
+    ctx.fillRect(0, 0, gameState.canvas.width, gameState.canvas.height);
+    
+    // Draw stars
+    drawStars();
+    
+    if (!gameState.player || gameState.isPaused) {
+        if (gameState.isPaused) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, gameState.canvas.width, gameState.canvas.height);
+            ctx.fillStyle = '#00FFFF';
+            ctx.font = '48px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText('PAUSED', gameState.canvas.width / 2, gameState.canvas.height / 2);
+        }
+        return;
+    }
+    
+    // Draw player
+    drawPlayer();
+    
+    // Draw bullets
+    gameState.bullets.forEach(bullet => {
+        ctx.fillStyle = '#00FFFF';
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    // Draw enemy bullets
+    gameState.enemyBullets.forEach(bullet => {
+        ctx.fillStyle = '#FF0000';
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    // Draw enemies
+    gameState.enemies.forEach(enemy => {
+        if (gameState.images.enemy) {
+            ctx.drawImage(
+                gameState.images.enemy,
+                enemy.x - enemy.width/2,
+                enemy.y - enemy.height/2,
+                enemy.width,
+                enemy.height
+            );
+        } else {
+            // Fallback if image not loaded
+            ctx.fillStyle = enemy.color;
+            ctx.fillRect(enemy.x - enemy.width/2, enemy.y - enemy.height/2, enemy.width, enemy.height);
+        }
+    });
+    
+    // Draw meteorites
+    gameState.meteorites.forEach(meteorite => {
+        if (gameState.images.meteorite) {
+            const size = meteorite.radius * 2;
+            ctx.drawImage(
+                gameState.images.meteorite,
+                meteorite.x - meteorite.radius,
+                meteorite.y - meteorite.radius,
+                size,
+                size
+            );
+        } else {
+            // Fallback if image not loaded
+            ctx.fillStyle = '#888888';
+            ctx.beginPath();
+            ctx.arc(meteorite.x, meteorite.y, meteorite.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#666666';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+    });
+    
+    // Draw comets
+    gameState.comets.forEach(comet => {
+        ctx.fillStyle = comet.buff.color;
+        ctx.beginPath();
+        ctx.arc(comet.x, comet.y, comet.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    });
+    
+    // Draw particles
+    gameState.particles.forEach(particle => {
+        ctx.globalAlpha = particle.alpha;
+        ctx.fillStyle = particle.color;
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    });
+    
+    // Draw boss
+    if (gameState.boss) {
+        ctx.fillStyle = '#FF0000';
+        ctx.fillRect(
+            gameState.boss.x - gameState.boss.width/2,
+            gameState.boss.y - gameState.boss.height/2,
+            gameState.boss.width,
+            gameState.boss.height
+        );
+    }
+}
+
+// Draw Stars
+function drawStars() {
+    const ctx = gameState.ctx;
+    ctx.fillStyle = '#FFFFFF';
+    
+    for (let i = 0; i < 100; i++) {
+        const x = (i * 37) % gameState.canvas.width;
+        const y = (i * 73) % gameState.canvas.height;
+        ctx.fillRect(x, y, 1, 1);
+    }
+}
+
+// Draw Player
+function drawPlayer() {
+    const player = gameState.player;
+    const ctx = gameState.ctx;
+    
+    if (!gameState.images.player) return; // Wait for image to load
+    
+    ctx.save();
+    
+    // Draw spaceship image
+    if (player.invincible && Math.floor(player.invincibleTime / 100) % 2) {
+        ctx.globalAlpha = 0.5;
+    } else {
+        ctx.globalAlpha = 1;
+    }
+    
+    const imgWidth = player.width;
+    const imgHeight = player.height;
+    ctx.drawImage(
+        gameState.images.player,
+        player.x - imgWidth / 2,
+        player.y - imgHeight / 2,
+        imgWidth,
+        imgHeight
+    );
+    
+    ctx.restore();
+}
+
+// Update HUD
+function updateHUD() {
+    if (!gameState.player) return;
+    
+    document.getElementById('healthDisplay').textContent = Math.max(0, Math.floor(gameState.player.health));
+    const minutes = Math.floor(gameState.gameTime / 60000);
+    const seconds = Math.floor((gameState.gameTime % 60000) / 1000);
+    document.getElementById('timeDisplay').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    document.getElementById('piecesDisplay').textContent = gameState.meteoritePieces;
+    
+    // Auto-save periodically (every 5 seconds) to prevent data loss
+    if (gameState.gameTime % 5000 < 16) {
+        saveGameData();
+    }
+}
+
+// Show Dialogue
+function showDialogue(title, text) {
+    document.getElementById('dialogueTitle').textContent = title;
+    document.getElementById('dialogueText').textContent = text;
+    document.getElementById('dialogueBox').classList.remove('hidden');
+    gameState.isPaused = true;
+    
+    // Collect fact
+    if (!gameState.collectedFacts.includes(gameState.currentPlanet)) {
+        gameState.collectedFacts.push(gameState.currentPlanet);
+        gameState.achievements.planetScholar++;
+        updateFactCollection();
+        updateAchievements();
+    }
+}
+
+function closeDialogue() {
+    document.getElementById('dialogueBox').classList.add('hidden');
+    gameState.isPaused = false;
+}
+
+// Toggle Pause
+function togglePause() {
+    gameState.isPaused = !gameState.isPaused;
+}
+
+// Game Over
+function gameOver(victory) {
+    gameState.isGameOver = true;
+    gameState.isPaused = true;
+    
+    const planet = planetData[gameState.currentPlanet];
+    
+    if (victory) {
+        document.getElementById('gameOverTitle').textContent = 'Planet Conquered!';
+        document.getElementById('gameOverText').textContent = `You've successfully completed ${planet.name}!`;
+        
+        // Planets are now unlocked with meteorite pieces, not by completing previous planets
+        // But we still check achievements
+        
+        // Check achievements
+        if (gameState.unlockedPlanets.length >= 9) {
+            gameState.achievements.orbitBreaker = true;
+        }
+        
+        if (gameState.collectedFacts.length >= 9) {
+            gameState.achievements.solarScholar = true;
+        }
+        
+        updatePlanetSelect();
+        updateAchievements();
+    } else {
+        document.getElementById('gameOverTitle').textContent = 'Mission Failed';
+        document.getElementById('gameOverText').textContent = `You were defeated on ${planet.name}. Try again!`;
+    }
+    
+    // Show stats
+    const stats = document.getElementById('gameOverStats');
+    stats.innerHTML = `
+        <p>Time Survived: ${Math.floor(gameState.gameTime / 60000)}:${Math.floor((gameState.gameTime % 60000) / 1000).toString().padStart(2, '0')}</p>
+        <p>Meteorite Pieces Collected: ${gameState.meteoritePieces}</p>
+    `;
+    
+    saveGameData();
+    showScreen('gameOverScreen');
+}
+
+// Upgrade Shop
+function buyUpgrade(type) {
+    const cost = getUpgradeCost(type);
+    if (gameState.meteoritePieces >= cost) {
+        gameState.meteoritePieces -= cost;
+        gameState.upgrades[type]++;
+        updateUpgradeShop();
+        saveGameData();
+    } else {
+        alert('Not enough meteorite pieces!');
+    }
+}
+
+function getUpgradeCost(type) {
+    const level = gameState.upgrades[type];
+    return 10 * Math.pow(2, level - 1);
+}
+
+function updateUpgradeShop() {
+    document.getElementById('meteoritePieces').textContent = gameState.meteoritePieces;
+    document.getElementById('damageLevel').textContent = gameState.upgrades.damage;
+    document.getElementById('damageCost').textContent = getUpgradeCost('damage');
+    document.getElementById('speedLevel').textContent = gameState.upgrades.speed;
+    document.getElementById('speedCost').textContent = getUpgradeCost('speed');
+    document.getElementById('rocketSpeedLevel').textContent = gameState.upgrades.rocketSpeed;
+    document.getElementById('rocketSpeedCost').textContent = getUpgradeCost('rocketSpeed');
+    document.getElementById('healthLevel').textContent = gameState.upgrades.health;
+    document.getElementById('healthCost').textContent = getUpgradeCost('health');
+}
+
+// Update Planet Select
+function updatePlanetSelect() {
+    // Update currency display
+    const piecesDisplay = document.getElementById('planetSelectPieces');
+    if (piecesDisplay) {
+        piecesDisplay.textContent = gameState.meteoritePieces;
+    }
+    
+    document.querySelectorAll('.planet-card').forEach(card => {
+        const planetKey = card.dataset.planet;
+        const planet = planetData[planetKey];
+        const status = card.querySelector('.planet-status');
+        
+        if (gameState.unlockedPlanets.includes(planetKey)) {
+            card.classList.remove('locked');
+            card.classList.add('unlocked');
+            status.textContent = 'Unlocked';
+            status.classList.remove('locked');
+            status.classList.add('unlocked');
+        } else {
+            card.classList.add('locked');
+            card.classList.remove('unlocked');
+            status.textContent = `Locked (${planet.unlockCost} pieces)`;
+            status.classList.add('locked');
+            status.classList.remove('unlocked');
+        }
+    });
+}
+
+// Update Fact Collection
+function updateFactCollection() {
+    const factList = document.getElementById('factList');
+    factList.innerHTML = '';
+    
+    Object.keys(planetData).forEach(planetKey => {
+        const planet = planetData[planetKey];
+        const factItem = document.createElement('div');
+        factItem.className = 'fact-item';
+        
+        if (gameState.collectedFacts.includes(planetKey)) {
+            factItem.innerHTML = `
+                <h3>${planet.name}</h3>
+                <p>${planet.fact}</p>
+            `;
+        } else {
+            factItem.innerHTML = `
+                <h3>${planet.name}</h3>
+                <p>??? (Complete this planet to unlock)</p>
+            `;
+        }
+        
+        factList.appendChild(factItem);
+    });
+}
+
+// Update Achievements
+function updateAchievements() {
+    const achievementList = document.getElementById('achievementList');
+    achievementList.innerHTML = '';
+    
+    const achievements = [
+        { id: 'orbitBreaker', name: 'Orbit Breaker', desc: 'Clear all planets', unlocked: gameState.achievements.orbitBreaker },
+        { id: 'solarScholar', name: 'Solar Scholar', desc: 'Collect all facts', unlocked: gameState.achievements.solarScholar },
+        { id: 'cometRider', name: 'Comet Rider', desc: `Collect ${gameState.achievements.cometRider}/100 comet buffs`, unlocked: gameState.achievements.cometRider >= 100 },
+        { id: 'planetScholar', name: 'Planet Scholar', desc: `Collect ${gameState.achievements.planetScholar}/9 planet facts`, unlocked: gameState.achievements.planetScholar >= 9 },
+        { id: 'ironRocket', name: 'Iron Rocket', desc: 'Survive without upgrades', unlocked: gameState.achievements.ironRocket }
+    ];
+    
+    achievements.forEach(achievement => {
+        const item = document.createElement('div');
+        item.className = `achievement-item ${achievement.unlocked ? 'unlocked' : 'locked'}`;
+        item.innerHTML = `
+            <h3>${achievement.name}</h3>
+            <p>${achievement.desc}</p>
+            ${achievement.unlocked ? '<span style="color: #00ff00;">✓ Unlocked</span>' : '<span style="color: #ff0000;">Locked</span>'}
+        `;
+        achievementList.appendChild(item);
+    });
+}
+
+// Save/Load Game Data
+function saveGameData() {
+    const data = {
+        unlockedPlanets: gameState.unlockedPlanets,
+        upgrades: gameState.upgrades,
+        meteoritePieces: gameState.meteoritePieces,
+        collectedFacts: gameState.collectedFacts,
+        achievements: gameState.achievements
+    };
+    localStorage.setItem('mindOrbitSave', JSON.stringify(data));
+}
+
+function loadGameData() {
+    const saved = localStorage.getItem('mindOrbitSave');
+    if (saved) {
+        const data = JSON.parse(saved);
+        gameState.unlockedPlanets = data.unlockedPlanets || ['mercury'];
+        gameState.upgrades = data.upgrades || { damage: 1, speed: 1, rocketSpeed: 1, health: 1 };
+        gameState.meteoritePieces = data.meteoritePieces || 0;
+        gameState.collectedFacts = data.collectedFacts || [];
+        gameState.achievements = { ...gameState.achievements, ...(data.achievements || {}) };
+    }
+}
+
+// Show Menu Options (from Start button)
+function showMenuOptions() {
+    const menuOptions = document.getElementById('menuOptions');
+    if (menuOptions) {
+        menuOptions.classList.remove('hidden');
+    }
+}
+
+// Hide Menu Options (back to starting screen)
+function hideMenuOptions() {
+    const menuOptions = document.getElementById('menuOptions');
+    if (menuOptions) {
+        menuOptions.classList.add('hidden');
+    }
+}
+
+// Initialize when page loads
+window.addEventListener('load', () => {
+    initGame();
+
+    // Add click handler for Start button
+    const startButton = document.getElementById('startButton');
+    if (startButton) {
+        startButton.addEventListener('click', showMenuOptions);
+    }
 });
 
-// ---------- Initialize & Start Loop ----------
-resetGame(); // show start-screen etc.
-requestAnimationFrame(loop);
