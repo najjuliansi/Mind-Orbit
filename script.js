@@ -1513,4 +1513,3 @@ window.addEventListener('load', () => {
         startButton.addEventListener('click', showMenuOptions);
     }
 });
-
